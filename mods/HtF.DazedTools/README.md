@@ -13,7 +13,7 @@ Harmony patch 完全繞開這件事：只**參照** `Assembly-CSharp.dll`，不�
 | 檔案 | 作用 |
 |---|---|
 | `src/Plugin.cs` | BepInEx 進入點、設定項、熱鍵、Harmony 啟動 |
-| `src/Patches.cs` | 4 個 Harmony patch（見下） |
+| `src/Patches.cs` | 3 個 Harmony patch（見下） |
 | `src/Commands/CommandCore.cs` | 修好的指令實作，從 `DazedCommands.cs` 移植 |
 | `src/UI/CommandRegistry.cs` | 指令中繼資料表 —— **UI 完全由它生成** |
 | `src/UI/GameData.cs` | 魚餌／配件／口袋／馬達／NPC／賭盤對照表 |
@@ -29,6 +29,16 @@ Harmony patch 完全繞開這件事：只**參照** `Assembly-CSharp.dll`，不�
 **指令邏輯與所有安全防護原封不動**（批次上限 48、彈丸上限 64、搜尋半徑 60m、
 `/forceunlockpocket` 與 `/buybaitfree` 的下界檢查、NPC 255 阻擋、賭場單例檢查）。
 
+之後在 PR review 又補了幾處**原版就有、但這裡沒照著做**的守衛：
+
+| 位置 | 問題 |
+|---|---|
+| `/spawndead` | 選到非生物（收音機、槍…）會 NRE，drip 版早就有這道檢查 |
+| `/allskins` | 沒有船的島上 NRE，而 `LockAllSkins()` 已經先把外觀解鎖整份清空了 |
+| `GetBatchItems` | 標籤寫 60m 但沒有距離判斷，且 `Dictionary` 順序未定義、多碰撞體物品重複計數 |
+| `GetNearestItem` | 訊息說有 60m 限制，實際上沒有 |
+| `Build`（UI） | 中間參數留空又無預設值時整格被吃掉，後面全部左移一位 |
+
 ### Harmony patch
 
 | 目標 | 種類 | 用途 |
@@ -36,9 +46,14 @@ Harmony patch 完全繞開這件事：只**參照** `Assembly-CSharp.dll`，不�
 | `DazedCommands.IsServerCommand` | Prefix | 聊天欄指令改走修好的版本，跳過原實作 |
 | `Player.BlockInputs` (getter) | Postfix | 視窗開著時擋掉本機玩家的所有輸入 |
 | `ChatManager.ChatMessage(string)` | Postfix | 把遊戲輸出鏡射到視窗的輸出區 |
-| `ClientSettings.CheatsEnabled` (getter) | Postfix | 選用：開啟遊戲內建的除錯熱鍵 |
 
-四個目標都用 `nameof` 指定，打錯字會在編譯期就失敗，不會拖到執行期。
+三個目標都用 `nameof` 指定，打錯字會在編譯期就失敗，不會拖到執行期。
+
+「開啟遊戲內建作弊鍵」**不是** patch。它原本是 `ClientSettings.CheatsEnabled` 的 getter
+postfix，那是無效的：一行的 auto-property 會被 Mono inline 進呼叫端，patch 靜靜地不生效
+（`MODDING_CONTEXT.md` 第 3.2 節那條規則，這裡自己踩了）。改成呼叫公開的
+`ClientSettings.ToggleCheats(bool)`，每幀比一次以蓋過遊戲自己的作弊按鈕；
+設定關掉時只有「當初是這個 mod 打開的」才關回去。
 
 ### IMGUI 的結構一致性規則（踩過坑）
 
@@ -151,8 +166,12 @@ csproj 用 `* - *.dll` 型樣排除，不用固定檔名——對方再改一次
 
 ## 尚未在遊戲內驗證
 
-以下是編譯通過、但需要實際跑一次才能確認的：
+IMGUI 的層級、字型載入、`PlayerCamera.ToggleMouse` 這三項當初的疑慮都已經確認沒問題，
+記在 `../../MODDING_CONTEXT.md` 第 4 節。目前**編譯通過但還沒實際跑過**的是 review 那批修正：
 
-- IMGUI 是否被遊戲的 URP Overlay Canvas蓋住（已先設 `GUI.depth = -1000`）
-- `Font.CreateDynamicFontFromOSFont("Microsoft JhengHei UI")` 是否拿得到字型（拿不到會在 log 留警告並退回內建字型）
-- 開視窗時 `PlayerCamera.ToggleMouse(true)` 在主選單階段是否會丟例外（已包 try/catch）
+- 沒有船的島上按 `/allskins`（應該只解鎖物品外觀並回報一句，不再動到船體外觀）
+- `/hitcreature all` 的 60m 半徑與「最近的 48 個」排序
+- `/spawndead` 選到非生物時的提示
+- 參數中間留空時拒絕送出的提示（`/slots` 物品名留空最好測）
+- 「開啟遊戲內建作弊鍵」改成呼叫 `ToggleCheats` 之後，M/N/O 熱鍵是否真的會動
+  ——這一項原本就是**無效**的（patch 了會被 inline 的 getter），所以等於第一次驗
