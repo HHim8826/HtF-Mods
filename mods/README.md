@@ -218,6 +218,23 @@ d = Mathf.Clamp01(1f - d);
 `Boss 出現時繼續播放` 打開後會把音量重新算一遍讓音樂繼續——
 這是唯一需要重算原本那段邏輯的地方，其餘都只是在原結果上乘倍率。
 
+重算時**頻率來源要照抄遊戲那一行判斷**：
+
+```csharp
+float freq = (Holder && Holder.Owner.IsLocalClient) ? _localFrequency : _frequency.Value;
+```
+
+`_localFrequency` 只有本機持有時才是當下的值。別人持有時它落後一拍，因為
+`OnFrequencyChange` 是先 `ApplyVolume()`、之後才寫 `_localFrequency`，
+而我們的 postfix 就掛在那次 `ApplyVolume` 後面。這裡一開始寫錯了，
+`MODDING_CONTEXT.md` 第 6 節收音機那條被推翻的敘述留在原地劃掉當教訓。
+
+**F8 重載會自己銷毀舊的 `AudioClip`。** 它是 `UnityEngine.Object`，從容器移除只是丟掉參照，
+而且載入時 `streamAudio = false`（有理由，見上），等於整份解碼常駐記憶體——
+不銷毀的話 200MB 的音樂資料夾按幾次 F8 就是幾百 MB 有去無回。
+順序是**先讓 `ApplyToAll` 把新 clip 換上去、再 `Destroy` 舊的**，
+還掛在某個 `AudioSource` 上的則留到下一輪再試。
+
 ## HtF.ConfigMenu — 遊戲內設定管理頁面
 
 按 **F9** 開啟。左邊是插件清單，右邊是該插件的設定，依 section 分組。

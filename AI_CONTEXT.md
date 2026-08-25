@@ -420,6 +420,9 @@ _allBaits = _allBaits.OrderBy(x => x.Cost).ToList();   // 穩定排序
 - 指令閘門是 `ClientSettings.CheatsEnabled`——**純客戶端旗標**，
   伺服器端對這些 `[ServerRpc(RequireOwnership = false)]` 沒有任何權限驗證。
   這正是本專案研究的漏洞本體，不是待修的 bug。
+- 它是一行的 auto-property（`ClientSettings.cs:10`），**patch 它的 getter 沒有用**
+  ——Mono 會 inline 進呼叫端。要改就呼叫同一個檔案裡公開的
+  `ClientSettings.ToggleCheats(bool)`（見 `MODDING_CONTEXT.md` 第 3.2 節）。
 
 ---
 

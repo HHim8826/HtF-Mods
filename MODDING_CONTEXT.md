@@ -110,6 +110,18 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
   `MoneyManager.RemoveMoney`、`CreatureManager.GetRandomItem`、
   `Radio.ApplyVolume`、`PlayerVitals.OnStartServer`。
 
+**這條規則自己踩過一次**：`HtF.DazedTools` 的「開啟遊戲內建作弊鍵」原本 patch
+`ClientSettings.CheatsEnabled` 的 getter（`ClientSettings.cs:10`，一行 auto-property），
+消費端 `MoneyManager.Update` 讀到的是被 inline 的欄位本體，所以**旗標永遠是 false、
+M/N/O 熱鍵不會動、也沒有任何訊息**。正確做法是那裡就有現成的公開 setter：
+
+```csharp
+public static void ToggleCheats(bool to) { ClientSettings.CheatsEnabled = to; }
+```
+
+補蓋的時機：遊戲自己也會改它（`ButtonManager.cs:971` 的作弊按鈕），所以每幀比一次、
+不同才寫。要能還原的話得記住「當初是不是自己打開的」，否則會把使用者自己開的一起關掉。
+
 ### 3.3 不能新增 SyncVar 或 ServerRpc
 
 FishNet 的同步欄位與 RPC 是**編譯期 IL weaving** 產生的，Harmony 補不上。
@@ -196,8 +208,15 @@ Unity 每幀對 `OnGUI` 跑**多次**：先 `Layout` 算版面，再跑輸入事
   不要自己重寫抽取。
 - `ItemInfoWeight` 私有欄位：`fishable`（注意沒有底線）、`_weight`。
 - **魚沒有稀有度欄位**——`Rarity` 只用在 `ItemSkin`。要判稀有只能用權重本身。
-- 咬鉤時間：`Bait.cs:162` 讀 `Info.CatchTimeMinMax`。`BaitInfo._catchTimeMinMax` 是私有欄位，
-  改它要做原值快照並在退出時還原。**不要** patch `Bait.RandomizedCatchTime` 的 setter（見 3.2）。
+- 咬鉤時間：`Bait.UnderwaterCheck` 讀 `Info.CatchTimeMinMax` 算出 `RandomizedCatchTime`。
+  `BaitInfo._catchTimeMinMax` 是私有欄位，改它要做原值快照並在退出時還原。
+  **不要** patch `Bait.RandomizedCatchTime` 的 setter（見 3.2）。
+- **咬鉤時間也是房主專屬**（已驗證，這一點一度在文件與 mod 說明裡寫反）：
+  `RandomizedCatchTime` 全專案**只有一個讀取點** `CreatureManager.FindFishForBait`
+  （`CreatureManager.cs:111`），它只從 `TickUpdate` 進得去，而 `TickUpdate` 只在
+  `CreatureManager.OnStartServer` 掛上 `TimeManager.OnPostTick`。
+  純客戶端調它**完全沒有效果**；房主調了就是整房都變。
+  判斷「這個欄位改了誰會受影響」要追**讀取點**跑在哪一端，不是看寫入點在哪。
 
 ### 經濟
 - **唯一售價算式**：`Item.TotalWorth`
@@ -224,9 +243,30 @@ Unity 每幀對 `OnGUI` 跑**多次**：先 `Layout` 算版面，再跑輸入事
 
 ### 收音機
 - `Radio._channels`（`RadioChannel[]`）、`Radio._noiseSource`、`Radio._radioVol`(0.3)、
-  `Radio._localFrequency`；`RadioChannel._channelSource`。全私有。
-- `_localFrequency` **在所有情況下都追得上目前頻率**：本機持有時自己更新，
-  別人持有時由 `OnFrequencyChange` 寫入。要重算音量用它就好，不必碰 SyncVar。
+  `Radio._localFrequency`、`Radio._frequencyStick`、`Radio.FreqMinMax`(88–108)；
+  `RadioChannel._channelSource`。以上全私有。
+  `Radio._frequency` 例外，它是 **public readonly `SyncVar<float>`**，直接 `.Value` 就讀得到。
+- ⚠ **這裡原本寫著一條錯的「已驗證」事實**，而且真的照著它寫出了 bug，留著當教訓：
+
+  > ~~`_localFrequency` 在所有情況下都追得上目前頻率：本機持有時自己更新，
+  > 別人持有時由 `OnFrequencyChange` 寫入。要重算音量用它就好，不必碰 SyncVar。~~
+
+  正確的是：**要重算音量就照抄遊戲那一行判斷**（`Radio.cs:121`）
+
+  ```csharp
+  float freq = (Holder && Holder.Owner.IsLocalClient) ? _localFrequency : _frequency.Value;
+  ```
+
+  `_localFrequency` **只有本機持有時才是當下的頻率**。別人持有時它落後一拍——
+  `OnFrequencyChange`（`Radio.cs:189-201`）的順序是
+
+  ```csharp
+  this.ApplyVolume();          // ← 掛在這裡的 postfix 讀到的是舊值
+  this._localFrequency = next; // ← 之後才寫
+  ```
+
+  也就是任何掛在 `ApplyVolume` 後面的程式讀 `_localFrequency`，拿到的必然是上一次的頻率。
+  **教訓：說某個欄位「隨時追得上」之前，先確認它的寫入點跟你的讀取點誰先誰後。**
 - 「沙沙聲」**是刻意的**，`ApplyVolume()` 最後一行：
   ```csharp
   _noiseSource.volume = (1f - 最接近頻道的準度) * 0.075f;
@@ -236,11 +276,33 @@ Unity 每幀對 `OnGUI` 跑**多次**：先 `Layout` 算版面，再跑輸入事
 - **Boss 登場時整個收音機靜音**（所有頻道與雜訊歸零後提早 return）。
 - `ToggleMute(false, t)` 會做 `_channelSource.time = t % clip.length`，
   所以 **clip 不能是 null**，且自訂音檔**不能用串流載入**（seek 不可靠）。
+- `ApplyVolume` 最後還會推指針：
+  `_frequencyStick.localPosition = -Vector3.right * (InverseLerp(FreqMinMax.x, FreqMinMax.y, freq) * 0.3f)`。
+  Boss 期間若自己接手重算音量，這一段也要補，否則轉台時指針卡住不動。
+- **自己載入的 `AudioClip` 要自己銷毀。** 它是 `UnityEngine.Object`，從容器移除只是丟掉參照，
+  GC 不會回收；`streamAudio = false` 又代表整份解碼後常駐記憶體。重載音樂時
+  **先換掉 `AudioSource.clip`、再 `Destroy` 舊的**——順序反過來會讓 AudioSource 掛著已銷毀的 clip。
+
+### 存檔 / 外觀
+- `SaveManager.LockAllSkins()`（`SaveManager.cs:617`）不是「鎖上」而是**整份清空**：
+  ```csharp
+  _curLocalSave.UnlockedBoatSkins = new List<byte>();
+  _curLocalSave.UnlockedItemSkins = new List<SavedItemSkin>();
+  ```
+- `SaveManager.UnlockSkin(itemID, skinIndex)` 是**累加且會去重**的（`itemID = 255` 代表船），
+  所以「全部解鎖」根本不需要先清空——先清空只是給自己製造一個中途失敗就毀存檔的空窗。
+- `BoatManager.Boat` 是 **public static 屬性，但逐關卡存在**：沒有船的島上是 null。
+  `_curLocalSave` 本身是私有的，拿不到快照，所以清空之後補不回來。
 
 ### 物品 / 準心
 - `ItemManager.Items` 是 `Dictionary<Transform, Item>`，以**每個碰撞體的 transform**
-  為鍵建立（`ItemManager.cs:311` 的 `TryAdd(collider.transform, item)`），
+  為鍵建立（`ItemManager.Add`：每個 collider 一筆，最後再補一筆 `item.transform`），
   所以射線命中點可以直接查表。
+- ⚠ 反過來說，**`ItemManager.Items.Values` 會重複**：多碰撞體的物品有幾個 collider
+  就出現幾次。要走過「場上所有物品」一定要**先去重**（`GetInstanceID` 進 `HashSet`），
+  否則同一個物品會被算好幾次、也會被送好幾次 RPC。
+- ⚠ 它是 `Dictionary`，**列舉順序未定義**。拿它做「最近的 N 個」之類的事之前要自己
+  排序並套距離上限，否則結果每次啟動都不一樣（見第 7 節那條通則）。
 - 重量（kg）＝ `Item._weight`（protected）× `Item.RandomizedWeight`
   ——照抄 `Creature.cs:335` 的 inspect 文字算法。
 - 生命上限不要寫死 100，用 `Health / HealthPercent` 反推。
@@ -388,3 +450,15 @@ Unity 每幀對 `OnGUI` 跑**多次**：先 `Layout` 算版面，再跑輸入事
 6. **版本字串不能拿來判斷 DLL 新舊**（來自 bundleVersion，見第 2 節）。
 7. 反編譯源碼**無法整體編譯**（見 `AI_CONTEXT.md` 第 2 節），
    只能參照 `Assembly-CSharp.dll` 做 Harmony patch。
+8. **「這個欄位隨時追得上」要先確認寫入點跟讀取點的先後**。
+   `Radio._localFrequency` 就是反例：它在 `ApplyVolume()` **之後**才被寫，
+   掛在 `ApplyVolume` 的 postfix 讀到的永遠是上一拍（見第 6 節收音機）。
+9. **「這個設定誰要裝」要追讀取點跑在哪一端，不是寫入點。**
+   咬鉤時間是改本機的 `BaitInfo`，看起來像客戶端行為，但唯一的讀取點在伺服器端，
+   所以其實是房主專屬——這一條一度在文件裡寫反（見第 6 節釣魚）。
+10. **先清空再重建的流程，要先確認重建那一半跑得完。**
+    `SaveManager.LockAllSkins()` 會把船體與物品外觀兩份一起清掉，
+    而 `BoatManager.Boat` 是逐關卡物件、沒有船的島上是 null——
+    中間丟例外就等於把使用者的解鎖紀錄毀掉，而且畫面上不會有任何提示。
+11. **文件裡的「已驗證」也可能是錯的。** 第 6 節收音機那條被推翻的敘述留在原地
+    劃掉當教訓；改到某條規則時，順手確認它的依據還成立。
