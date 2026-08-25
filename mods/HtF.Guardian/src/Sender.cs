@@ -1,0 +1,139 @@
+using System;
+using FishNet.Connection;
+
+namespace HtF.Guardian
+{
+    /// <summary>
+    /// 「現在正在處理的 ServerRpc 是誰送來的」。
+    ///
+    /// FishNet 把發送端連線交給每個 <c>RpcReader___*</c>（reader 的第三個參數
+    /// <c>NetworkConnection conn</c>，由 FishNet 自己填，客戶端偽造不了），
+    /// 但遊戲的 reader 只有 <c>SpawnPlayer</c> 那一個把它往下傳。這裡在 reader
+    /// 的 prefix 把它接起來，讓所有 <c>RpcLogic___*</c> 的守衛都拿得到。
+    ///
+    /// **為什麼一個靜態欄位就夠**：reader 讀完參數之後就在同一個呼叫堆疊裡直接
+    /// 呼叫 logic，中間不會 await、不會換執行緒，也不會有另一個 reader 插進來
+    /// （FishNet 是在主執行緒的 tick 裡循序處理封包的）。prefix 設值、postfix 清掉，
+    /// 期間就是那一個 RPC 的處理過程。
+    ///
+    /// 如果 logic 執行到一半丟例外，postfix 不會跑，欄位會留著上一個值——
+    /// 但那條連線接著就會被 FishNet 以 <c>MalformedData</c> 踢掉
+    /// （見 `AI_CONTEXT.md` 第 3 節），而下一個 reader 的 prefix 會覆蓋掉它，
+    /// 所以不會有殘值被誤用。
+    /// </summary>
+    internal static class Sender
+    {
+        /// <summary>發送端連線。null = 不是從網路進來的（伺服器自己呼叫）。</summary>
+        internal static NetworkConnection Current;
+
+        private static Player _player;
+        private static bool _playerResolved;
+
+        internal static void Begin(NetworkConnection conn)
+        {
+            Current = conn;
+            _player = null;
+            _playerResolved = false;
+        }
+
+        internal static void End()
+        {
+            Current = null;
+            _player = null;
+            _playerResolved = false;
+        }
+
+        /// <summary>
+        /// 房主自己（或伺服器內部直接呼叫）。遊戲有好幾處是在伺服器端代別人送 RPC 的
+        /// ——爆炸傷害（<c>ExplosionManager.ServerExplode</c>）、Boss 攻擊、
+        /// 引信到期的炸藥——那些的發送端都是房主，用一般規則檢查一定誤判。
+        /// </summary>
+        internal static bool IsHost
+        {
+            get
+            {
+                NetworkConnection c = Current;
+                if (c == null) return true;
+                try { return c.IsLocalClient; }
+                catch (Exception) { return false; }
+            }
+        }
+
+        /// <summary>這個 RPC 要不要驗證。房主預設跳過，見「也檢查房主自己」設定。</summary>
+        internal static bool Exempt
+        {
+            get
+            {
+                if (Plugin.Enabled == null || !Plugin.Enabled.Value) return true;
+                return IsHost && !Plugin.AlsoCheckHost.Value;
+            }
+        }
+
+        /// <summary>發送端的 Player。第一次查之後在這個 RPC 的處理過程中快取。</summary>
+        internal static Player Player
+        {
+            get
+            {
+                if (_playerResolved) return _player;
+                _playerResolved = true;
+                _player = Find(Current);
+                return _player;
+            }
+        }
+
+        /// <summary>這個 Player 是不是發送端本人。null 一律回 false。</summary>
+        internal static bool Owns(Player p)
+        {
+            if (!p) return false;
+            try { return Same(p.Owner, Current); }
+            catch (Exception) { return false; }
+        }
+
+        /// <summary>
+        /// 兩條連線是不是同一條。刻意不用 <c>NetworkConnection</c> 的 <c>==</c>：
+        /// 它的 <c>Equals</c> 在 <c>ClientId == -1</c>（未初始化的連線）時回 false，
+        /// 而我們要的是「同一個 ClientId」這個明確的意思。
+        /// </summary>
+        internal static bool Same(NetworkConnection a, NetworkConnection b)
+        {
+            if (ReferenceEquals(a, b)) return true;
+            if (ReferenceEquals(a, null) || ReferenceEquals(b, null)) return false;
+            return a.ClientId >= 0 && a.ClientId == b.ClientId;
+        }
+
+        internal static Player Find(NetworkConnection conn)
+        {
+            if (ReferenceEquals(conn, null)) return null;
+            try
+            {
+                var players = PlayerManager.Players;
+                for (int i = 0; i < players.Count; i++)
+                {
+                    Player p = players[i];
+                    if (p && Same(p.Owner, conn)) return p;
+                }
+            }
+            catch (Exception) { }
+            return null;
+        }
+
+        /// <summary>
+        /// 發送端的 Steam ID。取自 <c>conn.GetAddress()</c>——那是傳輸層給的位址，
+        /// 客戶端改不了；<c>Server.RpcLogic___SpawnPlayer</c> 也是用同一個來源
+        /// 認人的（見它對 <c>SteamManager.IsCurrentLobbyMember</c> 的檢查）。
+        /// 拿不到就回 0。
+        /// </summary>
+        internal static ulong SteamIdOf(NetworkConnection conn)
+        {
+            if (ReferenceEquals(conn, null)) return 0UL;
+            try
+            {
+                ulong id;
+                return ulong.TryParse(conn.GetAddress(), out id) ? id : 0UL;
+            }
+            catch (Exception) { return 0UL; }
+        }
+
+        internal static ulong SteamId { get { return SteamIdOf(Current); } }
+    }
+}

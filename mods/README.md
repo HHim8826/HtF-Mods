@@ -1,4 +1,4 @@
-# How to Fish — 七個獨立 mod
+# How to Fish — 九個獨立 mod
 
 每個都是獨立的 DLL、獨立的設定檔，可以單獨安裝，彼此之間沒有相依。
 共用的只有建置設定（`Common.props`）和雙語底層（`Shared/Loc.cs`），
@@ -7,12 +7,17 @@
 | 專案 | GUID | 誰要裝 | 做什麼 |
 |---|---|---|---|
 | `HtF.HudNumbers` | `htf.hudnumbers` | 只有你自己 | 血量／飽食／物品數值化 |
+| `HtF.AmmoCounter` | `htf.ammocounter` | 只有你自己 | 手上槍械的剩餘子彈 |
+| `HtF.Guardian` | `htf.guardian` | 只有房主 | ServerRpc 驗證層、速率限制、踢出／封鎖 |
 | `HtF.HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值 |
 | `HtF.Economy` | `htf.economy` | 房主（顯示要一致則全員） | 賣價、花費、起始金錢 |
 | `HtF.FishingEcology` | `htf.fishingecology` | 只有房主 | 抽魚權重、保底、咬鉤時間 |
 | `HtF.RadioMusic` | `htf.radiomusic` | 只有你自己 | 收音機自訂音樂、雜訊與音量 |
 | `HtF.ConfigMenu` | `htf.configmenu` | 只有你自己 | 遊戲內設定管理頁面（通用） |
 | `HtF.DazedTools` | `htf.dazedtools` | 只有你自己 | ServerRPC 指令工具（見該資料夾的 README） |
+
+`HtF.Guardian` 和 `HtF.DazedTools` 是同一件事的兩面：一個送這些 RPC，一個擋這些 RPC。
+你當房主時兩個一起裝不會打架（房主預設豁免），見 `HtF.Guardian/README.md`。
 
 ```bash
 dotnet build HtF.HudNumbers/HtF.HudNumbers.csproj
@@ -25,7 +30,7 @@ dotnet build HtF.HudNumbers/HtF.HudNumbers.csproj
 
 ## 中英雙語（全部 mod）
 
-七個 mod 的介面都有中英兩份文字。底層是 `mods/Shared/Loc.cs`，由 `Common.props`
+九個 mod 的介面都有中英兩份文字。底層是 `mods/Shared/Loc.cs`，由 `Common.props`
 **編譯進每一個 mod**——跟建置設定一樣是編譯期共用，每個 DLL 裡都有自己的一份，
 執行期彼此不相依，單獨安裝照樣能用。
 
@@ -124,6 +129,59 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
 重量的算法照抄 `Creature` 的 inspect 文字：`Item._weight × RandomizedWeight`。
 
 預設 **F6** 開關，設定裡可改位置（四角）、縮放、字型、顯示哪幾塊、射線距離。
+
+## HtF.AmmoCounter — 剩餘子彈顯示
+
+**純客戶端、純唯讀，零 Harmony patch，也不送任何封包。** 跟 `HtF.HudNumbers` 同一條路子。
+
+讀 `Weapon.Ammo`（彈匣內）和 `Weapon.Attachments.AmmoPerMag`（彈匣容量，會跟著
+擴充彈匣配件變）。**這遊戲沒有備用彈藥的概念**——`Weapon.TryRefillAmmo` 是直接把彈匣填滿，
+所以只有兩個數字，沒有第三個。
+
+兩個都是公開讀取器，我們只讀不寫，所以**不受〈為什麼有些地方不 patch getter〉那條規則影響**
+——那條講的是 patch 一行的 auto-property 會被 inline 掉，正常呼叫沒有這個問題。
+唯一用到反射的是 `Weapon._isReloading`（裝填提示），遊戲沒有公開的查詢；
+拿不到就只是不顯示提示字，其餘照常。
+
+樣式可選 數字 / 圓點 / 兩者，位置預設在準心下方（也可以貼四角）。
+彈匣容量超過 40 發時圓點列會自動退回只畫數字——一排點會橫跨整個畫面。
+低於門檻轉警示色、空彈閃爍，門檻與閃爍都可以關。
+
+文字**先偏移畫一次黑影再畫本體**：遊戲畫面是海和天空，淺色背景下純白字幾乎看不見，
+而 `GUIStyle` 沒有描邊。
+
+預設 **F10** 開關。瞄準（ADS）時可以設成自動隱藏，狙擊鏡才不會被擋。
+
+## HtF.Guardian — 反外掛驗證層（房主端）
+
+**只有房主要裝**，裝在純客戶端上不會執行到任何東西。完整說明在
+`HtF.Guardian/README.md`，這裡只講設計上最關鍵的那一點。
+
+遊戲的 `Server.cs` 有 56 個 `[ServerRpc(RequireOwnership = false)]`。
+`RequireOwnership = false` 關掉了 FishNet 自動的擁有者檢查，而遊戲**沒有補上自己的**——
+除了 `SpawnPlayer` 以外，沒有一個 `RpcLogic___*` 用到發送端連線，
+於是伺服器只能相信客戶端在參數裡自填的 `Player` / `SteamID` / `cost`。
+
+**FishNet 其實把答案送到門口了**：它給每個 `RpcReader___*` 注入真實的發送端
+`NetworkConnection`（reader 的第三個參數），只是遊戲的 reader 把它丟掉。
+這個 mod 就是在 reader 的 prefix 把它接起來，再在 `RpcLogic___*` 的 prefix 拿它驗證。
+
+三件和其他 mod 不一樣、值得記住的事：
+
+- **參數用位置注入 `__0` `__1`，不能用名字。** weaver 產生的 `RpcLogic___*` 參數在
+  metadata 裡沒有名字（反編譯看到的 `A_1` 是 dnSpy 對無名參數的填充）。
+  同一個 weaver 產生的 reader 反而**有**名字（`conn`）。
+- **patch 目標用前綴找**（`"RpcLogic___HitCreature___"`），因為方法名尾巴是簽章雜湊，
+  遊戲改參數就會變。找不到就在啟動時警告，不會默默失效。
+- **守衛不能丟例外。** FishNet 把「RPC 執行期間丟例外」當成惡意封包直接踢掉發送者
+  （`ServerManager.cs:1111-1119` 的 `Kick(KickReason.MalformedData)`），
+  守衛自己的 bug 不該變成踢人。
+
+檢查分五類（各自可關）：操作者身分、購買價格、數值範圍、索引範圍、速率限制。
+另外有封鎖名單和一個 **F11** 的監控面板。**處置預設是「只記錄」**，
+先看幾場面板上的數字再決定要不要自動踢人。
+
+它和 `HtF.DazedTools` 是同一件事的兩面。你當房主時兩個一起裝不會打架——房主預設豁免。
 
 ## HtF.HostRules — 房主規則擴充
 
@@ -301,7 +359,7 @@ Button 依 parent 分組，挑出「最像主要按鈕直欄」的那一組：
 
 ### 中英雙語
 
-「語言」設定（`自動 / 中文 / 英文`）在這個 mod 裡，**七個 mod 全部跟著它走**。
+「語言」設定（`自動 / 中文 / 英文`）在這個 mod 裡，**九個 mod 全部跟著它走**。
 機制見下面〈中英雙語（全部 mod）〉。這個頁面自己的文字在 `Localization.cs`，
 設定項的英文名稱與說明則寫在 `Plugin.Awake` 的 `Loc.Bind` 那幾行上。
 
