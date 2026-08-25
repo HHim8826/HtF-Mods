@@ -1,0 +1,61 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <!-- 反編譯來源會撞到參照組件裡的同名型別（CS0436），這是預期內的 -->
+    <NoWarn>$(NoWarn);CS0436;CS1701;CS1702;CS0618</NoWarn>
+    <DebugType>portable</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- 路徑：可用 -p:GameManaged=... / -p:ProfileDir=... 從命令列覆寫 -->
+  <PropertyGroup>
+    <GameManaged Condition="'$(GameManaged)' == ''">D:\SteamLibrary\steamapps\common\How to Fish\How to Fish\How to Fish_Data\Managed</GameManaged>
+    <ProfileDir Condition="'$(ProfileDir)' == ''">$(AppData)\r2modmanPlus-local\HowToFish\profiles\Default</ProfileDir>
+    <BepInExCore Condition="'$(BepInExCore)' == ''">$(ProfileDir)\BepInEx\core</BepInExCore>
+    <PluginOut Condition="'$(PluginOut)' == ''">$(ProfileDir)\BepInEx\plugins\$(AssemblyName)</PluginOut>
+  </PropertyGroup>
+
+  <!--
+    遊戲組件。排除規則出自 AI_CONTEXT.md 第 2 節，每一條都踩過坑：
+      netstandard.dll  Unity 的是 facade，會和 SDK 的 BCL 打架，造成一堆 CS0518
+      mscorlib/System* 同上，由 SDK 提供
+      "* - *.dll"      Managed 底下有 Assembly-CSharp 的手動備份（曾叫「- 複製」，
+                       現在叫「- 1.0.9」）。不要用固定檔名比對，用這個型樣才不會
+                       在對方又改名時載到舊版。
+  -->
+  <ItemGroup>
+    <Reference Include="$(GameManaged)\*.dll"
+               Exclude="$(GameManaged)\netstandard.dll;$(GameManaged)\mscorlib.dll;$(GameManaged)\System.dll;$(GameManaged)\System.*.dll;$(GameManaged)\* - *.dll">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(BepInExCore)\BepInEx.dll"><Private>false</Private></Reference>
+    <Reference Include="$(BepInExCore)\0Harmony.dll"><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <!--
+    中英雙語的共用底層。跟這個檔案本身一樣是**編譯期共用**：每個 mod 的 DLL 裡
+    都有自己的一份 HtF.Shared.Loc，執行期彼此不相依，單獨安裝也能用。
+    ConfigMenu 是用反射找各組件裡的 HtF.Shared.Loc.Term 來翻譯設定名稱的。
+  -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Shared\*.cs">
+      <Link>Shared\%(Filename)%(Extension)</Link>
+    </Compile>
+  </ItemGroup>
+
+  <Target Name="CheckPaths" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(GameManaged)\Assembly-CSharp.dll')"
+           Text="找不到遊戲組件：$(GameManaged)\Assembly-CSharp.dll。用 -p:GameManaged=&quot;...&quot; 指定。" />
+    <Error Condition="!Exists('$(BepInExCore)\BepInEx.dll')"
+           Text="找不到 BepInEx：$(BepInExCore)\BepInEx.dll。用 -p:ProfileDir=&quot;...&quot; 指定 r2modman 的 profile。" />
+  </Target>
+
+  <Target Name="DeployToProfile" AfterTargets="Build">
+    <MakeDir Directories="$(PluginOut)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginOut)" ContinueOnError="true" />
+    <Message Importance="high" Text="已部署 -> $(PluginOut)\$(TargetFileName)" />
+  </Target>
+
+</Project>

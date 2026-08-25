@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>HtF.DazedTools</AssemblyName>
+    <RootNamespace>HtF.DazedTools</RootNamespace>
+    <Version>1.0.0</Version>
+    <!--
+      CommandCore.cs 是反編譯出來的碼，除了 Common.props 那幾條之外還會撞到
+      成員隱藏（CS0108）與 override 相關（CS0114）的警告，都是預期內的。
+    -->
+    <NoWarn>$(NoWarn);CS0108;CS0114</NoWarn>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <Import Project="..\Common.props" />
+</Project>
