@@ -388,6 +388,16 @@ public static class CommandCore
 			ChatManager.ChatMessage("Couldn't find spawnable called <b>" + subCommands + "</b>");
 			return;
 		}
+		// Item.Creature is the serialized _creature field, which only creature prefabs assign,
+		// and the picker offers every spawnable (Radio, guns, tools). Without this the dead
+		// variant threw a NullReferenceException, same bug UseSpawnDripCommand already guards.
+		// Checked before Instantiate on purpose: bailing out afterwards would leave an
+		// un-spawned clone sitting in the scene.
+		if (asDead && !spawnable.Creature)
+		{
+			ChatManager.ChatMessage("<b>" + subCommands + "</b> is not a creature");
+			return;
+		}
 		Vector3 vector = GameInfo.CurCamera.transform.position + GameInfo.CurCamera.transform.forward * 2f;
 		Item item = UnityEngine.Object.Instantiate<Item>(spawnable, vector, Quaternion.identity);
 		if (asDead)
