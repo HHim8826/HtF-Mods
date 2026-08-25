@@ -1,0 +1,20 @@
+# --- 反編譯結果：不進版控 ---
+# 這三份是遊戲本體 Assembly-CSharp.dll 的反編譯，FishNet.Runtime 是網路庫的。
+# 那是別人的程式碼，不該由這個 repo 散布；而且隨時能重新產生，
+# 步驟見 AI_CONTEXT.md 第 1.5 節。查東西要看的是 decompiled-current/。
+/Assembly-CSharp/
+/Assembly-CSharp-1.09/
+/decompiled-current/
+/FishNet.Runtime/
+/Assembly-CSharp.sln
+/FishNet.Runtime.sln
+
+# --- 安全審查：尚未對外揭露 ---
+# 逐條列出遊戲 ServerRpc 的可利用漏洞。留在本機。
+/SECURITY_AUDIT_ServerRPC.md
+
+# --- 建置產物 ---
+bin/
+obj/
+*.user
+.vs/
