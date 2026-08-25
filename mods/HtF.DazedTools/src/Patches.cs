@@ -38,12 +38,12 @@ namespace HtF.DazedTools
             ModWindow.PushLog(message);
         }
 
-        /// <summary>選用：一併打開遊戲自己的作弊旗標（M/N/O/逗號 等內建熱鍵）。</summary>
-        [HarmonyPatch(typeof(ClientSettings), nameof(ClientSettings.CheatsEnabled), MethodType.Getter)]
-        [HarmonyPostfix]
-        private static void CheatsEnabled_Postfix(ref bool __result)
-        {
-            if (Plugin.ForceGameCheatFlag != null && Plugin.ForceGameCheatFlag.Value) __result = true;
-        }
+        // 「一併打開遊戲自己的作弊旗標」以前是 patch ClientSettings.CheatsEnabled 的 getter，
+        // 那是無效的：它是一行的 auto-property（ClientSettings.cs:10），Mono 會把 getter
+        // inline 進呼叫端（MoneyManager.Update 等），patch 上去**靜靜地不生效**——
+        // 沒有錯誤、沒有 log，只是 M/N/O 熱鍵不會動。這正是 MODDING_CONTEXT 第 3.2 節
+        // 記下來的那條規則，這裡自己踩了。
+        //
+        // 改成呼叫公開的 setter ClientSettings.ToggleCheats(bool)，見 Plugin.ApplyCheatFlag。
     }
 }

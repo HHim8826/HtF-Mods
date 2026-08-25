@@ -319,7 +319,24 @@ public static class CommandCore
 
 	private static void UseUnlockAllSkinsCommand()
 	{
-		SaveManager.LockAllSkins();
+		// BoatManager.Boat is per-level and is null on islands without a boat, so the boat
+		// loop below used to throw there. That mattered because SaveManager.LockAllSkins()
+		// wipes BOTH lists first (SaveManager.cs:617):
+		//     _curLocalSave.UnlockedBoatSkins = new List<byte>();
+		//     _curLocalSave.UnlockedItemSkins = new List<SavedItemSkin>();
+		// so the NRE landed after the wipe and before the boat skins were put back - the
+		// player silently lost every boat skin they had unlocked, and ModWindow only prints
+		// the exception into its output box.
+		//
+		// Fix: only reset when the rebuild can actually complete. UnlockSkin is additive and
+		// de-duplicates (SaveManager.cs:267), so skipping the reset still unlocks everything.
+		SkinPreset boatSkins = BoatManager.Boat ? BoatManager.Boat.SkinPreset : null;
+		bool canRebuildBoat = boatSkins && boatSkins.Skins != null;
+		if (canRebuildBoat)
+		{
+			SaveManager.LockAllSkins();
+		}
+
 		foreach (Item item in GameInfo.ItemWithSkinsforCommands)
 		{
 			if (item.SkinPreset)
@@ -330,7 +347,13 @@ public static class CommandCore
 				}
 			}
 		}
-		for (int k = 0; k < BoatManager.Boat.SkinPreset.Skins.Count; k++)
+
+		if (!canRebuildBoat)
+		{
+			ChatManager.ChatMessage("No boat in this level - unlocked item skins, left boat skins untouched");
+			return;
+		}
+		for (int k = 0; k < boatSkins.Skins.Count; k++)
 		{
 			SaveManager.UnlockSkin(byte.MaxValue, (byte)k);
 		}
@@ -673,20 +696,48 @@ public static class CommandCore
 		return result;
 	}
 
-	private static List<Item> GetBatchItems(Func<Item, bool> predicate)
+	// Snapshot of the items a batch command should act on, nearest first.
+	//
+	// Walking ItemManager.Items.Values and stopping at 48 had three problems:
+	//   * No distance check at all, while the UI promises one ("Hit all (60 m radius,
+	//     max 48)", "Pull nearby items to you"). The batch could be entirely on the far
+	//     side of the map.
+	//   * Dictionary enumeration order is arbitrary, so *which* 48 you got changed
+	//     between runs - the same class of bug as the menu button that moved every launch.
+	//   * ItemManager.Add registers one entry per collider transform plus the item's own
+	//     (ItemManager.cs:306), so a multi-collider item was counted - and RPC'd - several
+	//     times, eating the cap that exists to protect the connection.
+	//
+	// maxRange <= 0 means scene-wide, which is what /detonateall advertises.
+	private static List<Item> GetBatchItems(Func<Item, bool> predicate, float maxRange = CommandCore.MaxTargetRange)
 	{
 		List<Item> result = new List<Item>();
+		HashSet<int> seen = new HashSet<int>();
+
+		bool haveOrigin = Player.LocalPlayer && Player.LocalPlayer.Transform;
+		Vector3 origin = haveOrigin ? Player.LocalPlayer.Transform.position : Vector3.zero;
+		bool limitRange = haveOrigin && maxRange > 0f;
+		float maxSqrDist = maxRange * maxRange;
+
 		foreach (Item item in ItemManager.Items.Values)
 		{
-			if (item && (predicate == null || predicate(item)))
-			{
-				result.Add(item);
-				if (result.Count >= CommandCore.MaxBatchTargets)
-				{
-					ChatManager.ChatMessage("Capped at " + CommandCore.MaxBatchTargets + " items to avoid flooding the connection");
-					break;
-				}
-			}
+			if (!item || (predicate != null && !predicate(item))) continue;
+			if (!seen.Add(item.GetInstanceID())) continue;
+			if (limitRange && (item.transform.position - origin).sqrMagnitude > maxSqrDist) continue;
+			result.Add(item);
+		}
+
+		if (haveOrigin)
+		{
+			result.Sort((a, b) => (a.transform.position - origin).sqrMagnitude
+				.CompareTo((b.transform.position - origin).sqrMagnitude));
+		}
+
+		if (result.Count > CommandCore.MaxBatchTargets)
+		{
+			result.RemoveRange(CommandCore.MaxBatchTargets, result.Count - CommandCore.MaxBatchTargets);
+			ChatManager.ChatMessage("Capped at " + CommandCore.MaxBatchTargets
+				+ " items (nearest first) to avoid flooding the connection");
 		}
 		return result;
 	}
@@ -706,7 +757,10 @@ public static class CommandCore
 		}
 		Vector3 pos = Player.LocalPlayer.Transform.position;
 		Item nearest = null;
-		float minSqrDist = float.MaxValue;
+		// Seeded with the range cap, the same way GetTargetCreature does it. With
+		// float.MaxValue the callers happily reached a rod on another island 400m away
+		// while telling the user there was a 60m limit.
+		float minSqrDist = CommandCore.MaxTargetRange * CommandCore.MaxTargetRange;
 		foreach (Item item in ItemManager.Items.Values)
 		{
 			if (item && (predicate == null || predicate(item)))
@@ -1061,7 +1115,8 @@ public static class CommandCore
 	// RPC #12 - ActivateExplosive (HIGH: Remote instant detonation of explosives)
 	private static void UseActivateExplosiveCommand(string[] args)
 	{
-		List<Item> explosives = CommandCore.GetBatchItems((Item it) => it.Explosive);
+		// 0 = scene-wide on purpose: the command says "every explosive in the scene".
+		List<Item> explosives = CommandCore.GetBatchItems((Item it) => it.Explosive, 0f);
 		if (explosives.Count == 0)
 		{
 			ChatManager.ChatMessage("No explosives found in scene");

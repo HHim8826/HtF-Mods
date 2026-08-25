@@ -327,8 +327,17 @@ namespace HtF.DazedTools.UI
             if (GUILayout.Button(locked ? L.Locked : L.Run, locked ? GUI.skin.button : Theme.Run,
                                  GUILayout.Width(76f), GUILayout.Height(24f)))
             {
-                string line = Build(cmd, vals); // 現在就組好，延後的只有送出
-                Defer(() => Run(line));
+                Arg missing;
+                string line = Build(cmd, vals, out missing); // 現在就組好，延後的只有送出
+                if (line == null)
+                {
+                    Arg gap = missing;
+                    Defer(() => PushLog(L.CannotBeEmpty(gap.Text)));
+                }
+                else
+                {
+                    Defer(() => Run(line));
+                }
             }
             GUI.enabled = true;
             GUILayout.EndHorizontal();
@@ -731,9 +740,17 @@ namespace HtF.DazedTools.UI
         /// <summary>
         /// 依序組出指令字串。參數是位置相依的，所以中間留空、後面卻有值時，
         /// 中間那格要補上預設值，否則位置會整個錯開。
+        ///
+        /// 補不出來時（那一格的 Default 本身也是空字串）就**拒絕送出**並回報是哪一格。
+        /// 原本這裡是 continue 跳過，等於把中間那格吃掉、後面全部左移一位：
+        /// /slots 物品名留空、外觀索引填 3 → 送出 "/slots 3"，而 UseSlotsCommand 看到
+        /// args.Length &lt; 2 直接 return，連訊息都沒有，使用者只看到「按了沒反應」。
+        /// 補佔位符也不行——/slots 的非物品字串是「指向船」的意思，會靜靜換掉語意。
         /// </summary>
-        private static string Build(Cmd cmd, string[] vals)
+        private static string Build(Cmd cmd, string[] vals, out Arg missing)
         {
+            missing = null;
+
             int last = -1;
             for (int i = 0; i < vals.Length; i++)
                 if (!string.IsNullOrEmpty(vals[i])) last = i;
@@ -743,7 +760,11 @@ namespace HtF.DazedTools.UI
             {
                 string v = vals[i];
                 if (string.IsNullOrEmpty(v)) v = cmd.Args[i].Default;
-                if (string.IsNullOrEmpty(v)) continue;
+                if (string.IsNullOrEmpty(v))
+                {
+                    missing = cmd.Args[i];
+                    return null;
+                }
                 line += " " + v;
             }
             return line;

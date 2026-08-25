@@ -63,5 +63,13 @@ namespace HtF.DazedTools.UI
         }
 
         internal static string CommandThrew { get { return Loc.P("指令丟出例外：", "The command threw an exception: "); } }
+
+        /// <summary>中間那格留空、又沒有預設值可以補時的提示。</summary>
+        internal static string CannotBeEmpty(string argLabel)
+        {
+            return Loc.IsEnglish
+                ? "\"" + argLabel + "\" cannot be left empty - the arguments after it are matched by position."
+                : "「" + argLabel + "」不能留空——後面的參數是靠位置對應的。";
+        }
     }
 }

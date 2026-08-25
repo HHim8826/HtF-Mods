@@ -15,6 +15,7 @@ namespace HtF.RadioMusic
         internal const string ApplyVolumeName = "ApplyVolume";
 
         private static FieldInfo _fChannels, _fNoise, _fRadioVol, _fLocalFreq, _fChannelSource;
+        private static FieldInfo _fStick, _fFreqMinMax;
         private static bool _resolved;
 
         // 場上活著的收音機，音樂載完後要回頭套用
@@ -77,9 +78,17 @@ namespace HtF.RadioMusic
             RadioChannel[] channels = Channels(radio);
             if (channels == null || _fLocalFreq == null || _fRadioVol == null) return;
 
-            // _localFrequency 在所有情況下都追得上目前頻率：
-            // 本機持有時自己更新，別人持有時由 OnFrequencyChange 寫入。
-            float freq = (float)_fLocalFreq.GetValue(radio);
+            // 頻率來源要跟遊戲同一條判斷（Radio.cs:121）：
+            //     (Holder && Holder.Owner.IsLocalClient) ? _localFrequency : _frequency.Value
+            //
+            // 之前這裡無條件讀 _localFrequency，而那個欄位**不是**隨時都追得上：
+            // OnFrequencyChange（Radio.cs:189-201）是先 ApplyVolume()、之後才寫
+            // _localFrequency = next，我們的 postfix 就掛在那次 ApplyVolume 後面，
+            // 讀到的必然是上一次的頻率。結果是別人在轉台時，Boss 期間我們會用舊頻率
+            // 算音量——放錯頻道，或某個頻道該解除靜音卻沒有。
+            float freq = (radio.Holder && radio.Holder.Owner != null && radio.Holder.Owner.IsLocalClient)
+                ? (float)_fLocalFreq.GetValue(radio)
+                : radio._frequency.Value;
             float radioVol = (float)_fRadioVol.GetValue(radio);
             float tickTime = 0f;
             try { tickTime = (float)radio.TimeManager.TicksToTime(TickType.Tick); }
@@ -104,6 +113,26 @@ namespace HtF.RadioMusic
 
             var noise = _fNoise.GetValue(radio) as AudioSource;
             if (noise) noise.volume = (1f - best) * 0.075f * Plugin.NoiseVolume.Value;
+
+            MoveFrequencyStick(radio, freq);
+        }
+
+        /// <summary>
+        /// ApplyVolume 最後還會把指針推到對應位置（Radio.cs:154）。我們在 Boss 期間
+        /// 等於接手了整個 ApplyVolume，不補這一段的話轉台時指針會卡住不動。
+        /// 純視覺，兩個欄位任一個抓不到就安靜跳過。
+        /// </summary>
+        private static void MoveFrequencyStick(Radio radio, float freq)
+        {
+            if (_fStick == null || _fFreqMinMax == null) return;
+            try
+            {
+                var stick = _fStick.GetValue(radio) as Transform;
+                if (!stick) return;
+                Vector2 range = (Vector2)_fFreqMinMax.GetValue(radio);
+                stick.localPosition = -Vector3.right * (Mathf.InverseLerp(range.x, range.y, freq) * 0.3f);
+            }
+            catch (Exception) { }
         }
 
         // ------------------------------------------------------------------ 換曲
@@ -112,6 +141,29 @@ namespace HtF.RadioMusic
         {
             Live.RemoveAll(r => !r);
             for (int i = 0; i < Live.Count; i++) ApplyClips(Live[i]);
+        }
+
+        /// <summary>
+        /// 這個 clip 是否還掛在場上某台收音機的 AudioSource 上。
+        /// MusicLibrary 用它決定舊 clip 現在能不能安全銷毀。
+        /// </summary>
+        internal static bool IsClipInUse(AudioClip clip)
+        {
+            if (!clip) return false;
+            for (int i = 0; i < Live.Count; i++)
+            {
+                Radio radio = Live[i];
+                if (!radio) continue;
+
+                RadioChannel[] channels = Channels(radio);
+                if (channels == null) continue;
+                for (int c = 0; c < channels.Length; c++)
+                {
+                    AudioSource src = SourceOf(channels[c]);
+                    if (src && src.clip == clip) return true;
+                }
+            }
+            return false;
         }
 
         private static void ApplyClips(Radio radio)
@@ -170,6 +222,8 @@ namespace HtF.RadioMusic
             _fRadioVol = AccessTools.Field(typeof(Radio), "_radioVol");
             _fLocalFreq = AccessTools.Field(typeof(Radio), "_localFrequency");
             _fChannelSource = AccessTools.Field(typeof(RadioChannel), "_channelSource");
+            _fStick = AccessTools.Field(typeof(Radio), "_frequencyStick");
+            _fFreqMinMax = AccessTools.Field(typeof(Radio), "FreqMinMax");
 
             if (_fChannels == null || _fChannelSource == null)
                 Plugin.Log.LogError("Radio 的欄位名對不上（遊戲可能又更新了），換曲不會生效。");

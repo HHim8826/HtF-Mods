@@ -25,6 +25,9 @@ namespace HtF.RadioMusic
         // 每個頻道目前播到第幾首
         private static readonly Dictionary<int, int> Cursor = new Dictionary<int, int>();
 
+        // 上一批 clip，等新的換上去之後才銷毀。見 DisposeStale。
+        private static readonly List<AudioClip> Stale = new List<AudioClip>();
+
         internal static string Folder
         {
             get { return Path.Combine(BepInEx.Paths.ConfigPath, "HtF.RadioMusic"); }
@@ -90,6 +93,19 @@ namespace HtF.RadioMusic
         internal static IEnumerator LoadAll()
         {
             Ready = false;
+
+            // AudioClip 是 UnityEngine.Object：從字典移除只是丟掉參照，GC 不會回收它，
+            // 而且 Load 是 streamAudio = false（有理由，見那邊的註解），整份解碼後常駐
+            // 記憶體。所以重載必須自己 Destroy，否則 200MB 的音樂資料夾按幾次 F8
+            // 就是幾百 MB 有去無回。
+            //
+            // 這裡只先記下來：真正銷毀要等 ApplyToAll 把新 clip 換上去之後
+            // （見 DisposeStale），不然中途 AudioSource 上掛的是已銷毀的 clip。
+            // AddRange 而不是覆蓋：F8 會 StopAllCoroutines 把這個協程中斷，
+            // 上一輪沒清掉的要繼續帶著走。
+            foreach (KeyValuePair<int, List<AudioClip>> kv in ByChannel) Stale.AddRange(kv.Value);
+            Stale.AddRange(Shared);
+
             ByChannel.Clear();
             Shared.Clear();
             Cursor.Clear();
@@ -131,6 +147,26 @@ namespace HtF.RadioMusic
 
             Ready = true;
             Plugin.Log.LogInfo("音樂載入完成：共 " + TotalClips + " 首（指定頻道 " + ByChannel.Count + " 個）。");
+        }
+
+        /// <summary>
+        /// 銷毀上一批 clip。**要在新的 clip 已經換到 AudioSource 上之後才呼叫。**
+        ///
+        /// 還掛在某個 AudioSource 上的先留著（例如新資料夾是空的、ApplyClips 提早
+        /// return 的情況），下一輪再試——砍掉正在用的 clip 只會換成沒有聲音。
+        /// </summary>
+        internal static void DisposeStale(Func<AudioClip, bool> inUse)
+        {
+            int freed = 0;
+            Stale.RemoveAll(clip =>
+            {
+                if (!clip) return true;                                   // 已經被銷毀了
+                if (inUse != null && inUse(clip)) return false;           // 還在播，下次再說
+                UnityEngine.Object.Destroy(clip);
+                freed++;
+                return true;
+            });
+            if (freed > 0) Plugin.Log.LogInfo("已釋放 " + freed + " 首舊曲目的記憶體。");
         }
 
         private static IEnumerable<string> AudioFiles(string dir)

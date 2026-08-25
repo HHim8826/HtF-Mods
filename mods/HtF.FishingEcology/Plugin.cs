@@ -15,7 +15,10 @@ namespace HtF.FishingEcology
     /// **不會改到 BaitInfo 資產本身**（那是共用的 ScriptableObject，改了會髒到整個 session）。
     ///
     /// 抽魚在伺服器端執行，所以房主裝了就對全房生效。
-    /// 「咬鉤時間」是唯一的例外——那是各自客戶端算的，只影響裝了 mod 的人。
+    /// **咬鉤時間也一樣是房主專屬**：唯一讀 Bait.RandomizedCatchTime 的地方是
+    /// CreatureManager.FindFishForBait（CreatureManager.cs:111），而它只從 TickUpdate
+    /// 進得去，TickUpdate 只在 CreatureManager.OnStartServer 掛上 TimeManager.OnPostTick。
+    /// 純客戶端裝了調它不會有任何效果。
     /// </summary>
     [BepInPlugin(Guid, "HtF Fishing Ecology", "1.0.0")]
     public class Plugin : BaseUnityPlugin
@@ -93,10 +96,10 @@ namespace HtF.FishingEcology
                 new AcceptableValueRange<int>(0, 100));
 
             CatchTimeMultiplier = Loc.Bind(Config, "咬鉤", "咬鉤時間倍率", 1.0f, "Bite Time Multiplier",
-                "小於 1 = 魚咬鉤更快。這一項是改 BaitInfo 資產，屬於客戶端行為，\n"
-                + "只對裝了這個 mod 的人生效（離開遊戲時會還原）。",
-                "Below 1 = fish bite sooner. This one edits the BaitInfo asset, which is client-side:\n"
-                + "it only applies to people who have this mod installed (and is restored on exit).",
+                "小於 1 = 魚咬鉤更快。這一項是改 BaitInfo 資產（離開遊戲時會還原）。\n"
+                + "跟權重一樣是房主專屬：唯一的讀取點只在伺服器端跑，純客戶端調它不會有效果。",
+                "Below 1 = fish bite sooner. This one edits the BaitInfo asset (restored when you quit).\n"
+                + "Like the weights it is host-only: the value is read server-side, so tuning it as a pure client does nothing.",
                 new AcceptableValueRange<float>(0.05f, 10f));
 
             LogRolls = Loc.Bind(Config, "除錯", "記錄每次抽取", false, "Log Every Roll",

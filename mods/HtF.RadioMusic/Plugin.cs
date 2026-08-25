@@ -107,6 +107,10 @@ namespace HtF.RadioMusic
 
             // 音樂是非同步載入的，載完時場上可能已經有收音機了，回頭補套用。
             RadioPatcher.ApplyToAll();
+
+            // 舊 clip 的記憶體要等這時候才放：ApplyToAll 之前砍的話，
+            // AudioSource 上掛的會是已經被銷毀的 clip。
+            MusicLibrary.DisposeStale(RadioPatcher.IsClipInUse);
         }
     }
 }

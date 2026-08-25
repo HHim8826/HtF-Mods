@@ -12,6 +12,11 @@ namespace HtF.FishingEcology
     /// Bait 是這樣算的（Bait.cs）：
     ///     RandomizedCatchTime = Random.Range(Info.CatchTimeMinMax.x, Info.CatchTimeMinMax.y);
     ///
+    /// **這是房主專屬的。** 唯一讀 RandomizedCatchTime 的地方是
+    /// CreatureManager.FindFishForBait（CreatureManager.cs:111），只從 TickUpdate 進得去，
+    /// 而 TickUpdate 只在 CreatureManager.OnStartServer 掛上 TimeManager.OnPostTick——
+    /// 純客戶端調了不會有任何效果，房主調了就是整房都變。
+    ///
     /// 沒有去 patch RandomizedCatchTime 的 setter——那是個一行的 auto-property，
     /// Mono 會把它 inline 掉，patch 會靜靜地不生效。
     /// 改成直接調整 BaitInfo 資產上的 _catchTimeMinMax，

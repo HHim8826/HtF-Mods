@@ -71,10 +71,39 @@ namespace HtF.DazedTools
             // 語言跟著 ConfigMenu 的設定（沒裝就跟著遊戲語系），每幀重判一次。
             // OnGUI 在 Update 之後跑，所以同一幀畫出來的文字語言一致。
             Loc.Resolve();
+            ApplyCheatFlag();
 
             if (ToggleKey.Value.IsDown()) ModWindow.Toggle();
             ModWindow.Tick();
             Commands.CommandCore.PumpBoatInput();
+        }
+
+        /// <summary>
+        /// 「開啟遊戲內建作弊鍵」＝ 直接寫 ClientSettings.CheatsEnabled，不 patch getter。
+        /// 那是一行的 auto-property，Mono 會 inline 進呼叫端，patch 上去不會生效（第 3.2 節）。
+        ///
+        /// 每幀比一次是刻意的：遊戲自己也會改這個旗標（ButtonManager 的作弊按鈕，
+        /// ButtonManager.cs:971），被改掉時要蓋回來。反過來，設定關掉時只有「當初是我們
+        /// 打開的」才關回去——不然會把使用者自己從遊戲選單開的作弊一起關掉。
+        /// </summary>
+        private static bool _cheatsForcedByUs;
+
+        private static void ApplyCheatFlag()
+        {
+            bool want = ForceGameCheatFlag != null && ForceGameCheatFlag.Value;
+            if (want)
+            {
+                if (!ClientSettings.CheatsEnabled)
+                {
+                    ClientSettings.ToggleCheats(true);
+                    _cheatsForcedByUs = true;
+                }
+            }
+            else if (_cheatsForcedByUs)
+            {
+                ClientSettings.ToggleCheats(false);
+                _cheatsForcedByUs = false;
+            }
         }
 
         private void OnGUI()

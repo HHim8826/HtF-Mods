@@ -9,7 +9,7 @@
 | `HtF.HudNumbers` | `htf.hudnumbers` | 只有你自己 | 血量／飽食／物品數值化 |
 | `HtF.HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值 |
 | `HtF.Economy` | `htf.economy` | 房主（顯示要一致則全員） | 賣價、花費、起始金錢 |
-| `HtF.FishingEcology` | `htf.fishingecology` | 房主（咬鉤時間各自生效） | 抽魚權重、保底、咬鉤時間 |
+| `HtF.FishingEcology` | `htf.fishingecology` | 只有房主 | 抽魚權重、保底、咬鉤時間 |
 | `HtF.RadioMusic` | `htf.radiomusic` | 只有你自己 | 收音機自訂音樂、雜訊與音量 |
 | `HtF.ConfigMenu` | `htf.configmenu` | 只有你自己 | 遊戲內設定管理頁面（通用） |
 | `HtF.DazedTools` | `htf.dazedtools` | 只有你自己 | ServerRPC 指令工具（見該資料夾的 README） |
@@ -176,8 +176,10 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
 - **個別倍率**：`tuna=5, giantpiranha=0.2` 這種格式，名稱用去空格全小寫（跟 `/spawn` 一樣），
   會覆蓋上面的分類倍率。
 - **保底**：連續 N 次抽到非稀有後，下一次只從稀有項抽。計數全房共用。
-- **咬鉤時間倍率**：這一項是改 `BaitInfo._catchTimeMinMax` 資產，屬客戶端行為，
-  只對裝了 mod 的人生效。有做原值快照，倍率一律從快照算，退出時還原。
+- **咬鉤時間倍率**：改 `BaitInfo._catchTimeMinMax` 資產。**跟權重表一樣是房主專屬**——
+  唯一讀 `Bait.RandomizedCatchTime` 的地方是 `CreatureManager.FindFishForBait`
+  （`CreatureManager.cs:111`），只從 `TickUpdate` 進得去，而 `TickUpdate` 只在
+  `OnStartServer` 掛上 `TimeManager.OnPostTick`。有做原值快照，倍率一律從快照算，退出時還原。
 
 `除錯 / 記錄每次抽取` 打開後會把抽到什麼寫進 log，調倍率時很有用。
 
