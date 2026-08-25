@@ -43,14 +43,10 @@ dotnet build mods/HtF.HudNumbers/HtF.HudNumbers.csproj \
 ## 文件
 
 - `mods/README.md` — 七個 mod 的設計說明、中英雙語架構、踩過的坑
-- `MODDING_CONTEXT.md` — 做 mod 時**已驗證的事實**（BepInEx／Harmony 的硬規則、
-  IMGUI 結構一致性、遊戲端的守衛），未驗證的推測都標了 `[未驗證]`
-- `AI_CONTEXT.md` — 反編譯與研究筆記
-- `DAZED_COMMANDS_手冊.md` — 遊戲內建 dev 指令的完整手冊
 - `mods/HtF.DazedTools/README.md` — 指令工具視窗
 
 ## 不在這個 repo 裡的東西
 
 遊戲本體與 FishNet 的**反編譯原始碼不進版控**——那是別人的程式碼，不該由這裡散布，
-而且隨時能從 DLL 重新產生（步驟見 `AI_CONTEXT.md` 第 1.5 節）。
+而且隨時能從 DLL 重新產生。
 文件裡引用到的型別與方法名，都以你自己反編譯出來的那份為準。

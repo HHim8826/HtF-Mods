@@ -13,6 +13,13 @@
 # 逐條列出遊戲 ServerRpc 的可利用漏洞。留在本機。
 /SECURITY_AUDIT_ServerRPC.md
 
+# --- 內部開發筆記：不上傳 ---
+# 給 AI 助手/開發者看的內部脈絡文件與資料抽取腳本，非給使用者看的專案文件。
+/AI_CONTEXT.md
+/DAZED_COMMANDS_手冊.md
+/MODDING_CONTEXT.md
+/extract_gamedata.py
+
 # --- 建置產物 ---
 bin/
 obj/
