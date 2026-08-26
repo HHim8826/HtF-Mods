@@ -45,6 +45,69 @@
     </Compile>
   </ItemGroup>
 
+  <!--
+    ============================================================
+    版本號的單一來源 = 各專案 .csproj 的 <Version>
+    ============================================================
+
+    一個版本號有三個地方要對上：csproj 的 <Version>、[BepInPlugin] 屬性、
+    以及 Thunderstore 的 manifest.json。三份字面值一定會有人只改一份——
+    改了 csproj 忘了屬性，遊戲裡顯示的還是舊版；改了屬性忘了 manifest，
+    Thunderstore 會用舊號碼收下這個包（而且版本號不能重覆上傳，只能再開一版）。
+
+    所以：
+      csproj <Version> / <PluginName>  ──產生──>  ModInfo.g.cs  ──>  [BepInPlugin]
+                                       ──對帳──>  manifest.json（check_repo.py）
+
+    [BepInPlugin] 的參數必須是編譯期常數，所以不能直接讀 MSBuild 屬性，
+    要先產生成 const。產物寫在 obj/ 底下（不進版控），每次建置重新產生。
+
+    **屬性與 Compile 項目都在 target 裡宣告，不在專案層級。** 這不是風格問題：
+    $(IntermediateOutputPath) 是 SDK 的 .targets 設的，而 .targets 在這個檔案
+    **之後**才被匯入——在專案層級讀它會拿到空字串，檔案就會被寫到專案根目錄。
+    target 是執行期才展開的，那時候什麼都齊了。
+
+    同理，target 不能加 Inputs/Outputs：一旦被判定為最新而略過，裡面那個
+    <Compile Include> 也不會執行，編譯就會找不到 ModInfo。改用
+    WriteOnlyWhenDifferent 避免無謂地讓下游重編。
+  -->
+  <Target Name="GenerateModInfo" BeforeTargets="CoreCompile">
+    <Error Condition="'$(PluginName)' == ''"
+           Text="$(MSBuildProjectName).csproj 少了 &lt;PluginName&gt;，[BepInPlugin] 的顯示名稱是從它來的。" />
+    <Error Condition="'$(Version)' == ''"
+           Text="$(MSBuildProjectName).csproj 少了 &lt;Version&gt;。" />
+
+    <PropertyGroup>
+      <GeneratedModInfo>$(IntermediateOutputPath)ModInfo.g.cs</GeneratedModInfo>
+    </PropertyGroup>
+
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+
+    <!-- Lines 是用分號分隔的，所以 C# 的分號要寫成 %3B -->
+    <ItemGroup>
+      <ModInfoLine Include="// &lt;auto-generated /&gt;" />
+      <ModInfoLine Include="// 由 mods/Common.props 的 GenerateModInfo 產生。不要編輯，也不要進版控。" />
+      <ModInfoLine Include="// 來源：$(MSBuildProjectName).csproj 的 &lt;PluginName&gt; 與 &lt;Version&gt;。" />
+      <ModInfoLine Include="namespace $(RootNamespace)" />
+      <ModInfoLine Include="{" />
+      <ModInfoLine Include="    internal static class ModInfo" />
+      <ModInfoLine Include="    {" />
+      <ModInfoLine Include="        public const string Name = &quot;$(PluginName)&quot;%3B" />
+      <ModInfoLine Include="        public const string Version = &quot;$(Version)&quot;%3B" />
+      <ModInfoLine Include="    }" />
+      <ModInfoLine Include="}" />
+    </ItemGroup>
+
+    <WriteLinesToFile File="$(GeneratedModInfo)"
+                      Lines="@(ModInfoLine)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+
+    <ItemGroup>
+      <Compile Include="$(GeneratedModInfo)" />
+    </ItemGroup>
+  </Target>
+
   <Target Name="CheckPaths" BeforeTargets="BeforeBuild">
     <Error Condition="!Exists('$(GameManaged)\Assembly-CSharp.dll')"
            Text="找不到遊戲組件：$(GameManaged)\Assembly-CSharp.dll。用 -p:GameManaged=&quot;...&quot; 指定。" />

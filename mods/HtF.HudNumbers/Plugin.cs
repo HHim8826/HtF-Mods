@@ -13,7 +13,7 @@ namespace HtF.HudNumbers
     /// 純客戶端、純唯讀——沒有任何 Harmony patch，也不送任何封包，
     /// 所以在別人的房間裡用也不會影響任何人。
     /// </summary>
-    [BepInPlugin(Guid, "HtF HUD Numbers", "1.0.0")]
+    [BepInPlugin(Guid, ModInfo.Name, ModInfo.Version)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "htf.hudnumbers";

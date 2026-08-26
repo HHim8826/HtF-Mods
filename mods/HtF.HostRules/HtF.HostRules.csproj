@@ -3,6 +3,7 @@
     <AssemblyName>HtF.HostRules</AssemblyName>
     <RootNamespace>HtF.HostRules</RootNamespace>
     <Version>1.0.0</Version>
+    <PluginName>HtF Host Rules</PluginName>
   </PropertyGroup>
   <Import Project="..\Common.props" />
 </Project>

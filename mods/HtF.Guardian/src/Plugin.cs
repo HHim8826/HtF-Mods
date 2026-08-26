@@ -38,7 +38,7 @@ namespace HtF.Guardian
     /// IL weaving），所以這裡不建立任何新的同步狀態，只在既有的伺服器端
     /// 進入點上加守衛。
     /// </summary>
-    [BepInPlugin(Guid, "HtF Guardian", "1.0.0")]
+    [BepInPlugin(Guid, ModInfo.Name, ModInfo.Version)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "htf.guardian";

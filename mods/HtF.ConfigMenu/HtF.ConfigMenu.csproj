@@ -3,6 +3,7 @@
     <AssemblyName>HtF.ConfigMenu</AssemblyName>
     <RootNamespace>HtF.ConfigMenu</RootNamespace>
     <Version>1.0.0</Version>
+    <PluginName>HtF Config Menu</PluginName>
   </PropertyGroup>
   <Import Project="..\Common.props" />
 </Project>

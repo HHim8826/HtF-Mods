@@ -23,5 +23,7 @@
 # --- 建置產物 ---
 bin/
 obj/
+__pycache__/
+dist/
 *.user
 .vs/

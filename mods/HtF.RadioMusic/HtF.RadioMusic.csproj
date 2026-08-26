@@ -3,6 +3,7 @@
     <AssemblyName>HtF.RadioMusic</AssemblyName>
     <RootNamespace>HtF.RadioMusic</RootNamespace>
     <Version>1.0.0</Version>
+    <PluginName>HtF Radio Music</PluginName>
   </PropertyGroup>
   <Import Project="..\Common.props" />
 </Project>

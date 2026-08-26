@@ -1,0 +1,9 @@
+{
+  "name": "HtF_AmmoCounter",
+  "version_number": "1.0.0",
+  "website_url": "https://github.com/HHim8826/HtF-Mods",
+  "description": "Shows how many rounds are left in the gun you are holding, as a number, a row of pips, or both. Follows extended magazines. Client-side and read-only. English / 繁體中文.",
+  "dependencies": [
+    "BepInEx-BepInExPack-5.4.2305"
+  ]
+}

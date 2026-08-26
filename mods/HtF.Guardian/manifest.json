@@ -1,0 +1,9 @@
+{
+  "name": "HtF_Guardian",
+  "version_number": "1.0.0",
+  "website_url": "https://github.com/HHim8826/HtF-Mods",
+  "description": "Host-side ServerRpc validation layer. Checks all 56 of the game's ServerRpcs against the connection that actually sent them, rate-limits them, and can kick or ban. Host only. English / 繁體中文.",
+  "dependencies": [
+    "BepInEx-BepInExPack-5.4.2305"
+  ]
+}

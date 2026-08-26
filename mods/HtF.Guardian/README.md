@@ -1,343 +1,427 @@
-# HtF.Guardian
+# HtF Guardian
 
-房主端的 ServerRpc 驗證層。把遊戲丟掉的「這個封包是誰送的」接回來，用它替
-56 條 `[ServerRpc(RequireOwnership = false)]` 逐一補上授權檢查與速率限制。
+English | [繁體中文](https://github.com/HHim8826/HtF-Mods/blob/main/mods/HtF.Guardian/README_ZH.md)
 
-**只有房主要裝。** 所有 `RpcLogic___*` 都只在伺服器端跑，裝在純客戶端上完全不會執行到。
+A host-side ServerRpc validation layer. It recovers the one piece of information the game throws
+away — *which connection actually sent this packet* — and uses it to put an authorisation check and
+a rate limit on each of the 56 `[ServerRpc(RequireOwnership = false)]` entry points.
 
-## 問題是什麼
+**Only the host needs it.** Every `RpcLogic___*` runs server-side only, so on a pure client this mod
+never executes anything.
 
-遊戲是 host-authoritative（listen server）。`Server.cs` 有 56 個
-`[ServerRpc(RequireOwnership = false)]`——`RequireOwnership = false` 關掉了 FishNet
-自動的擁有者檢查，而遊戲**沒有補上自己的**。
+## Install
 
-FishNet 其實把答案送到門口了：它替每個 ServerRpc 的 reader 注入真實的發送端連線，
+**Mod manager (recommended).** Install through Thunderstore Mod Manager or r2modman and start the
+game modded. BepInEx comes along as a dependency.
+
+**Manual.** Install [BepInEx 5.4.23.5](https://thunderstore.io/c/how-to-fish/p/BepInEx/BepInExPack/)
+first, then drop `HtF.Guardian.dll` into `BepInEx/plugins/`.
+
+Press **F11** while hosting to open the monitor panel. Enforcement starts on **Log Only** — see
+Settings below.
+
+## The problem
+
+The game is host-authoritative (a listen server). `Server.cs` holds 56
+`[ServerRpc(RequireOwnership = false)]` methods — `RequireOwnership = false` switches off FishNet's
+automatic owner check, and the game **never replaced it with one of its own**.
+
+FishNet actually delivers the answer to the door. It injects the real sending connection into every
+ServerRpc reader:
 
 ```csharp
 private void RpcReader___HitCreature___215526726(PooledReader r, Channel channel, NetworkConnection conn)
 {
     Creature creature = ...; Player player = ...; int damage = ...;
     if (!base.IsServerInitialized) return;
-    this.RpcLogic___HitCreature___215526726(creature, player, damage, hitPoint, dir);   // ← conn 沒有傳下去
+    this.RpcLogic___HitCreature___215526726(creature, player, damage, hitPoint, dir);   // conn is never passed on
 }
 ```
 
-56 條 reader 裡，**只有 `SpawnPlayer` 把 `conn` 往下傳**（它拿去比對 Steam 大廳成員）。
-其餘 55 條把它丟掉，於是伺服器只能相信客戶端在參數裡自填的
-`Player` / `SteamID` / `cost` 來決定「誰在操作、對誰操作、花多少錢」。
+Of those 56 readers, **only `SpawnPlayer` passes `conn` down** (it uses it to check Steam lobby
+membership). The other 55 drop it, which leaves the server trusting the `Player` / `SteamID` /
+`cost` the client filled into the parameters to decide *who is acting, on whom, and for how much*.
 
-結果就是：任何連進來的人都可以對任意玩家造成任意傷害、把任意玩家傳送出地圖、
-清空任意玩家的背包、冒名發言、用 `cost = 0` 白拿東西、替全隊押注、強制結束遊戲。
+The result: anyone who connects can deal arbitrary damage to any player, teleport any player off
+the map, empty any player's inventory, speak as someone else, take items for `cost = 0`, place bets
+on the whole team's behalf, and force the run to end.
 
-## 做法
+## How it works
 
 ```
 RpcReader___X(reader, channel, conn)
-        │
-        │  ① prefix：Sender.Begin(conn)          ← 把發送端存起來
-        ▼
-   （讀參數）
-        │
-        ▼
+        |
+        |  (1) prefix: Sender.Begin(conn)          <- remember who sent this
+        v
+   (parameters are read)
+        |
+        v
 RpcLogic___X(a, b, c)
-        │
-        │  ② prefix：用 Sender.Current 驗證 a/b/c
-        │     不合 → return false（不執行原方法）
-        │     可修正 → 改寫 ref 參數後放行
-        ▼
-   （原本的邏輯）
-        │
-        │  ③ reader postfix：Sender.End()
+        |
+        |  (2) prefix: validate a/b/c against Sender.Current
+        |      invalid  -> return false (the original never runs)
+        |      fixable  -> rewrite the ref parameter and let it through
+        v
+   (the original logic)
+        |
+        |  (3) reader postfix: Sender.End()
 ```
 
-| 檔案 | 作用 |
+| File | Role |
 |---|---|
-| `src/Plugin.cs` | BepInEx 進入點、設定項、熱鍵 |
-| `src/Patcher.cs` | 找目標並掛 patch；啟動時印涵蓋率 |
-| `src/Sender.cs` | 「現在這個 RPC 是誰送的」＋ 連線 ↔ Player ↔ SteamID |
-| `src/Guards.cs` | 56 個守衛本體 |
-| `src/Report.cs` | 記錄違規、處置（踢出／封鎖）、餵資料給面板 |
-| `src/Limiter.cs` | 每連線每 RPC 的權杖桶 |
-| `src/Prices.cs` | 從場上販賣點取真實售價 |
-| `src/Damagers.cs` | 「最近誰打過這隻生物」，只服務 `SetItemMultiplier` |
-| `src/Speed.cs` | 移動速度檢查（預設關閉） |
-| `src/Bans.cs` | 封鎖名單檔 |
-| `src/Watcher.cs` | 連線事件：封鎖名單在這裡生效 |
-| `src/Panel.cs` `src/Styles.cs` | F11 監控面板 |
+| `src/Plugin.cs` | BepInEx entry point, settings, hotkey |
+| `src/Patcher.cs` | Finds the targets and applies the patches; prints coverage at startup |
+| `src/Sender.cs` | "who sent the RPC we are in", plus connection to Player to SteamID |
+| `src/Guards.cs` | The 56 guards themselves |
+| `src/Report.cs` | Records violations, enforces (kick / ban), feeds the panel |
+| `src/Limiter.cs` | Token bucket per connection per RPC |
+| `src/Prices.cs` | Reads real prices off the shop objects in the scene |
+| `src/Damagers.cs` | "who recently hit this creature", used only by `SetItemMultiplier` |
+| `src/Speed.cs` | Movement speed check (off by default) |
+| `src/Bans.cs` | Ban list file |
+| `src/Watcher.cs` | Connection events; this is where the ban list takes effect |
+| `src/Panel.cs` `src/Styles.cs` | The F11 monitor panel |
 
-### 目標一律用前綴找，不寫死方法名
+### Targets are found by prefix, never by a hardcoded name
 
-weaver 產生的方法叫 `RpcLogic___HitCreature___215526726`，後面那串是簽章雜湊，
-遊戲改一次參數就會變。所以用 `"RpcLogic___HitCreature___"` 當前綴搜，
-真的整個不見了就在啟動時留一行警告——**不會默默失效**。
+The weaver-generated method is called `RpcLogic___HitCreature___215526726`, and that trailing number
+is a signature hash — it changes the moment the game changes a parameter. So the search is on the
+prefix `"RpcLogic___HitCreature___"`, and if a target genuinely disappears the mod says so at
+startup. **It never fails silently.**
 
-啟動 log 會印涵蓋率：
+The startup log prints coverage:
 
 ```
-守衛 56 / 56 條 RPC，reader 56 條。
+Guarding 56 / 56 RPCs, 56 readers.
 ```
 
-遊戲更新加了新的 ServerRpc 時，那個分母會變大，還會多一行「沒有守衛的：…」。
+When a game update adds a new ServerRpc that denominator grows, and an "unguarded: ..." line appears
+next to it.
 
-### 參數用位置注入 `__0` `__1`，不是名字
+### Parameters bind by position (`__0`, `__1`), not by name
 
-**這條是硬規則。** `RpcLogic___*` 的參數在 metadata 裡**沒有名字**
-（反編譯看到的 `A_1`、`A_2` 是 dnSpy 對無名參數的填充），照名字綁一定失敗。
-有趣的是同一個 weaver 產生的 reader **有**名字（`PooledReader0` / `channel` / `conn`）。
+**This one is a hard rule.** The parameters of `RpcLogic___*` **have no names in the metadata** — the
+`A_1`, `A_2` you see in a decompiler are dnSpy's filler for unnamed parameters — so binding by name
+is guaranteed to fail. Amusingly, the readers produced by the same weaver **do** have names
+(`PooledReader0` / `channel` / `conn`).
 
-位置注入還有一個好處：遊戲改參數名不影響我們。要改寫參數就宣告成 `ref`。
-本專案已用遊戲自己的 `0Harmony.dll`（HarmonyX 2.9.0）實測過
-`__N` 綁定、`ref __N` 寫回、prefix 回傳 false 跳過原方法三件事都成立。
+Positional binding has a second benefit: a game update that renames parameters cannot affect us.
+To rewrite a parameter, declare it `ref`. All three behaviours — `__N` binding, `ref __N` write-back,
+and a prefix returning false to skip the original — were verified against the game's own
+`0Harmony.dll` (HarmonyX 2.9.0).
 
-### reader 要濾掉 TargetRpc
+### The readers need TargetRpcs filtered out
 
-`Server` 上有 57 個 reader：56 個 ServerRpc 的是
-`(PooledReader, Channel, NetworkConnection)`，另外一個
-`TargetReconcileRejectedItemPickup` 是 TargetRpc，**只有兩個參數**。
-對它綁 `__2` 會在 patch 當下就丟例外，所以要先看參數數量與型別。
+`Server` carries 57 readers: the 56 ServerRpc ones take
+`(PooledReader, Channel, NetworkConnection)`, and one more,
+`TargetReconcileRejectedItemPickup`, is a TargetRpc with **only two parameters**. Binding `__2` to it
+throws at patch time, so parameter count and types are checked first.
 
-### 守衛不能丟例外
+### A guard must never throw
 
-FishNet 把「RPC 解析／執行期間丟出任何例外」當成惡意封包，**直接踢掉發送者**
-（`ServerManager.Kick(KickReason.MalformedData)`，FishNet.Runtime 的
-`Managing/Server/ServerManager.cs:1111-1119`）。
+FishNet treats *any* exception thrown while parsing or executing an RPC as malformed data and
+**kicks the sender outright** (`ServerManager.Kick(KickReason.MalformedData)`, in FishNet.Runtime's
+`Managing/Server/ServerManager.cs:1111-1119`).
 
-所以守衛裡只有 null 檢查、比大小、比連線；需要反射或掃場景的部分都關在
-自己的 try/catch 裡。**守衛自己的 bug 不該變成踢人。**
+So the guards only do null checks, comparisons and connection matching; anything that needs
+reflection or a scene scan is wrapped in its own try/catch. **A bug in the guard must not turn into
+a kick.**
 
-## 檢查了什麼
+## What is checked
 
-### 操作者身分（`檢查操作者身分`）
+### Actor identity (`Check Actor Identity`)
 
-RPC 參數裡的 `Player`（或物品的持有者）必須就是送出封包的那條連線。
+The `Player` named in the RPC parameters (or the holder of the item) must be the connection that
+sent the packet.
 
-這一條擋掉絕大多數的搗亂：強制移動別人、把別人傳送出地圖、清空別人的背包、
-替別人切換道具欄、幫別人的槍花全隊的錢買配件、冒名發言、把別人踹下駕駛座。
+This single check stops most griefing: moving other players, teleporting them off the map, emptying
+their inventories, switching their hotbar, buying attachments for their gun with the team's money,
+speaking in their name, kicking them out of the driver's seat.
 
-驗證方式是 `player.Owner` 對上 reader 給的 `conn`——`Player` 是用
-`base.Spawn(player.gameObject, conn, ...)` 生成的，擁有者就是當初送 `SpawnPlayer` 的人。
+Verification compares `player.Owner` against the `conn` the reader supplied — `Player` is spawned
+with `base.Spawn(player.gameObject, conn, ...)`, so its owner is whoever sent `SpawnPlayer`.
 
-**房主豁免用三個獨立訊號判斷，不只靠 `IsLocalClient`。** 這是實測踩到的：
-`NetworkConnection.IsLocalClient` 是
-`NetworkManager != null && NetworkManager.ClientManager.Connection == this`，
-而 `NetworkConnection.NetworkManager` 是可能沒被設起來的——FishNet 自己在
-`GetAddress()` 那條路上就有 `if (NetworkManager == null) NetworkManager = InstanceFinder.NetworkManager;`
-這種補救。那個欄位一旦是 null，`IsLocalClient` 就**靜靜地回 false**，
-房主的每一個封包都會被當成外人檢查，看起來就像「正常玩也會被擋」。
+**The host exemption uses three independent signals, not just `IsLocalClient`.** This was learned
+the hard way. `NetworkConnection.IsLocalClient` is
+`NetworkManager != null && NetworkManager.ClientManager.Connection == this`, and
+`NetworkConnection.NetworkManager` is a field that may never have been set — FishNet itself patches
+around this on the `GetAddress()` path with
+`if (NetworkManager == null) NetworkManager = InstanceFinder.NetworkManager;`. Once that field is
+null, `IsLocalClient` **quietly returns false**, every packet from the host gets checked as a
+stranger's, and it looks exactly like "playing normally trips the guards".
 
-所以現在是：`IsLocalClient` → 直接跟 `ClientManager.Connection` 比 `ClientId`
-（不經過 `conn.NetworkManager`）→ 比對 `Player.LocalPlayer.Owner`（完全不碰 FishNet
-的連線語意）。任一成立就算房主。第一次判定「這條連線不是房主」時會在 log 印出
-三個 id，判斷有問題時一眼就看得出來。
+So the check is now: `IsLocalClient`, then compare `ClientId` directly against
+`ClientManager.Connection` (without going through `conn.NetworkManager`), then compare against
+`Player.LocalPlayer.Owner` (which does not touch FishNet's connection semantics at all). Any one of
+them is enough. The first time a connection is judged "not the host", all three ids are printed to
+the log, so a misjudgement is visible at a glance.
 
-**「誰有資格」不是只有持有者一種。** 每條 RPC 要對上的是它自己那個送出點的閘門，
-照抄同一套會把正常玩的人擋掉：
+**"Who is entitled" is not always the holder.** Each RPC has to be matched against the gate at its
+own send site; copying one rule everywhere blocks people who are playing normally:
 
-| 閘門 | 適用 | 例子 |
+| Gate | Applies to | Examples |
 |---|---|---|
-| 持有者 | 手上的東西 | `ReloadWeapon`、`SetItemSkin`、`UpdateHeldToolPosRot` |
-| **模擬者** | 沒人拿著、但由某個客戶端在算物理的東西 | `GrillItemInLava` |
-| 駕駛 | 船 | `SendBoatInput`、`SetDriver(null)` |
-| 目標本身的狀態 | 沒有「操作者」可驗的 | `SetItemMultiplier` |
+| Holder | things in your hands | `ReloadWeapon`, `SetItemSkin`, `UpdateHeldToolPosRot` |
+| **Simulator** | things nobody is holding, but some client is running physics for | `GrillItemInLava` |
+| Driver | boats | `SendBoatInput`, `SetDriver(null)` |
+| The target's own state | cases with no "actor" to verify | `SetItemMultiplier` |
 
-`GrillItemInLava` 是踩到這條的例子：唯一的送出點 `MainLava.ItemTouchedLava`
-（`MainLava.cs:96`）的閘門是 **`item.RigidbodySync.IsSimulatedLocal`**，不是持有者
-——丟進岩漿的東西本來就沒有人拿著。所以驗的是
-`RigidbodySync.SyncedSimulator`（SyncVar，伺服器端是對的）對上發送端。
-沒有競態：`StartSimulateLocal` 是**先**送 `SetSyncedSimulator` 才
-`ToggleSimulation(true)`，兩條 RPC 又都是 Reliable 同序。
+`GrillItemInLava` is the case that taught us this: its only send site,
+`MainLava.ItemTouchedLava` (`MainLava.cs:96`), gates on **`item.RigidbodySync.IsSimulatedLocal`**,
+not on the holder — nobody is holding the thing you threw into the lava. So the check compares
+`RigidbodySync.SyncedSimulator` (a SyncVar, correct on the server) against the sender. There is no
+race: `StartSimulateLocal` sends `SetSyncedSimulator` **before** `ToggleSimulation(true)`, and both
+RPCs are Reliable and therefore ordered.
 
-`SetItemMultiplier` 也沒有操作者可以驗，而且它的效果**不可逆**：
-`Item.SetKillscoreMultiplier` 有 `if (_killScoreMultiplier.Value != 1f) return;`
-（`Item.cs:893`），一個物品只能設一次，所以搶先對別人剛釣上來的魚設 `0`，
-那條魚就永遠賣不出錢（`Item.TotalWorth` 最後會乘上它）。
+`SetItemMultiplier` has no actor to verify either, and its effect is **irreversible**:
+`Item.SetKillscoreMultiplier` starts with `if (_killScoreMultiplier.Value != 1f) return;`
+(`Item.cs:893`), so an item can only be set once. Racing to set `0` on the fish someone just caught
+means that fish can never be sold for anything (`Item.TotalWorth` multiplies by it at the end).
 
-它的送出點是 `Creature.LocalHit`（`Creature.cs:397`）——擊殺者的客戶端替剛死的
-生物設倍率，而擊殺者既不是持有者也不是模擬者（在水裡被射死的魚沒有人拿著）。
-所以驗的是「發送端**最近有沒有打過這隻**」：那份資訊 `HitCreature` 的守衛
-本來就會看到，順手記進 `Damagers` 就好。順序有保證——`LocalHit` 先送
-`HitCreature` 再送 `SetItemMultiplier`，兩條都是 Reliable 同序。
+Its send site is `Creature.LocalHit` (`Creature.cs:397`) — the killer's client sets the multiplier on
+the creature that just died, and the killer is neither the holder nor the simulator (a fish shot in
+the water is not held by anyone). So the check is "has the sender hit this creature recently?": that
+information already passes through the `HitCreature` guard, so it is recorded in `Damagers` on the
+way past. Ordering is guaranteed — `LocalHit` sends `HitCreature` before `SetItemMultiplier`, and
+both are Reliable and ordered.
 
-⚠ **不能只認「最後打的那一個人」**（第一版這樣寫）。兩條 RPC 之間隔著一次
-網路往返，多人一起圍毆同一隻 Boss 或同一群魚時，A 的 `HitCreature` 與
-`SetItemMultiplier` 中間插進 B 的非致命一擊是**常態**——每隻生物只留一筆記錄
-就會被蓋掉，A 的正常擊殺被判成「目標無效」，而那是會計入違規證據的類型，
-累積下去踢掉的是無辜的房客。所以 `Damagers` 記的是「10 秒內打過這隻的所有人」，
-發送端在裡面就放行；攻擊者一樣得先真的打到那隻生物才有資格設倍率。
+**It must not be "the last person who hit it"** (which is what the first version did). There is a
+network round trip between the two RPCs, and when several people beat on the same boss or the same
+school of fish, B's non-lethal hit landing between A's `HitCreature` and A's `SetItemMultiplier` is
+**normal**. One record per creature gets overwritten, A's legitimate kill is judged "invalid target",
+and that is a category that counts as violation evidence — accumulate it and you kick an innocent
+guest. So `Damagers` records *everyone* who hit that creature within 10 seconds, and the sender
+passes if they are in that set. An attacker still has to actually hit the creature to earn the right
+to set a multiplier.
 
-⚠ **不要用 `Creature.IsDead` 當條件**（第一版這樣寫，實測一場擋掉 43 次正常擊殺）。
-它是 `Hp <= 0`，而 `Creature.Hp` 是一個**普通的 auto-property**，只在
-`OnStartClient` 和 `OnHealthChange` 的**客戶端那一輪**被寫——那個回呼開頭第一行
-就是 `if (asServer) return;`（`Creature.cs:496`）。伺服器端改的是 SyncVar
-`_hp.Value`，`Hp` 這個鏡像要等客戶端回呼才跟上，RPC 剛進來的那一刻它還是舊值。
-名字看起來像伺服器狀態，其實是客戶端鏡像。
+**Do not use `Creature.IsDead` as a condition** (the first version did; one session blocked 43
+legitimate kills). It is `Hp <= 0`, and `Creature.Hp` is an **ordinary auto-property** written only in
+the **client half** of `OnStartClient` and `OnHealthChange` — and that callback's first line is
+`if (asServer) return;` (`Creature.cs:496`). The server changes the SyncVar `_hp.Value`; the `Hp`
+mirror only catches up on the client callback, so at the moment the RPC arrives it still holds the
+old value. It reads like server state and is in fact a client mirror.
 
-### 價格（`檢查購買價格`）
+### Prices (`Check Purchase Prices`)
 
-魚餌、船馬達、船雷達這三條把價格當參數讓客戶端自己填。**正解不是硬寫價格表**，
-而是去問場上那個販賣點：價格是 `Purchasable._customCost`，遊戲自己送的就是這個值。
+Bait, boat motor and boat radar pass the price as a parameter for the client to fill in. **The fix is
+not a hardcoded price table** — it is to ask the shop object in the scene: the price is
+`Purchasable._customCost`, which is exactly what the game itself sends.
 
-允許的是**一組**值而不是單一值——同一種魚餌可能同時有付費攤位和免費攤位
-（`_isFree` 會讓 `_customCost` 變 0），教學區的餌就是免費的。
-價格對不上時**不擋，改成正確價格再放行**，並記一筆。
+What is accepted is a *set* of values rather than a single one: the same bait can exist at a paid
+stall and a free one at the same time (`_isFree` makes `_customCost` 0), and the tutorial area's
+bait is free. When the price does not match, the RPC is **not blocked** — the correct price is
+substituted and it goes through, with a note recorded.
 
-只掃啟用中的物件：`BaitPurchasable._customCost` 是在 `Awake` 裡算出來的，
-沒醒過的物件上那個欄位還是 0，收進來會變成一筆假的「這種餌免費」。
+Only enabled objects are scanned: `BaitPurchasable._customCost` is computed in `Awake`, so on an
+object that has never woken the field is still 0, and collecting it would add a phantom "this bait
+is free" entry.
 
-`BuyItem` 的 `isFree` 布林同理——傳 `true` 就整個跳過扣款，守衛把它改回 `false`。
+`BuyItem`'s `isFree` boolean is the same story — passing `true` skips the deduction entirely, so the
+guard rewrites it to `false`.
 
-### 數值（`檢查數值範圍`）
+### Values (`Check Value Ranges`)
 
-| 項目 | 規則 |
+| Item | Rule |
 |---|---|
-| 對生物的傷害 | `0 … 生物傷害上限`。**負值一律擋**——`ServerChangeHp` 是 `_hp.Value -= damage`，負傷害等於替 Boss 回血 |
-| 對玩家的傷害（有攻擊者） | `0 … 玩家傷害上限` |
-| 對玩家的傷害（無攻擊者） | `0 … 無來源傷害上限` ＋ 獨立的速率桶 |
-| 分數倍率 | `0 … 分數倍率上限` |
-| 復活進度 | 夾到 `0…1` |
-| 單次彈丸數 | `≤ 單次彈丸數上限` |
-| 聊天字數 | 超過就截斷 |
-| 座標／旋轉／頻率 | 擋掉 NaN 與無限大 |
+| Damage to a creature | `0 ... Maximum Damage To A Creature`. **Negatives are always rejected** — `ServerChangeHp` is `_hp.Value -= damage`, so negative damage heals the boss |
+| Damage to a player (with an attacker) | `0 ... Maximum Damage To A Player` |
+| Damage to a player (no attacker) | `0 ... Maximum Sourceless Damage`, plus its own rate bucket |
+| Score multiplier | `0 ... Maximum Score Multiplier` |
+| Revive progress | Clamped to `0...1` |
+| Projectiles per shot | At most `Maximum Projectiles Per Shot` |
+| Chat length | Truncated past the limit |
+| Position / rotation / frequency | NaN and infinity rejected |
 
-傷害 0 是放行的：伺服器端本來就是無動作（`if (A_2 != 0)`），擋它只會製造假違規。
+Zero damage is allowed through: the server already does nothing with it (`if (A_2 != 0)`), so
+blocking it would only manufacture false violations.
 
-### 索引（`檢查索引範圍`）
+### Indices (`Check Index Ranges`)
 
-這幾個不是作弊而是**當機**：遊戲的守衛漏了下界，而任何例外都會讓發送者被踢。
+These are not cheats, they are **crashes**: the game's own guards are missing a lower bound, and any
+exception gets the sender kicked.
 
-- `UnlockPocket`：`_extraSlotCosts[index - 1]`，`byte 0` 在減法時提升成 int 變 **−1**（不是 255）。遊戲只擋了 `> 5`。
-- `BuyBait`：`_ownedBaits[index - 1]`，同一個陷阱。
-- `TakeItemFromNpc`：守衛是 `if (A_2 != 255 && !NpcIsHoldingItem(A_2)) return;`——**id 為 255 時整個守衛被跳過**，接著走到字典索引器 `_idToNpc[255]`。
-- `PlaceBet` / `UpdateRoulette` / `TakeItemFromNpc`：`CasinoManager.Instance` 與 `NPCManager.Instance` 都是純靜態欄位，只在 `Awake` 指派、銷毀時不清空，所以離開該關卡之後是「已銷毀但非 null」的 Unity 物件——原方法裸解參照就會丟 `MissingReferenceException`。
+- `UnlockPocket`: `_extraSlotCosts[index - 1]`, where a `byte 0` is promoted to int in the
+  subtraction and becomes **-1** (not 255). The game only checks `> 5`.
+- `BuyBait`: `_ownedBaits[index - 1]`, the same trap.
+- `TakeItemFromNpc`: the guard reads `if (A_2 != 255 && !NpcIsHoldingItem(A_2)) return;` — **an id of
+  255 skips the whole guard**, and execution walks straight into the dictionary indexer
+  `_idToNpc[255]`.
+- `PlaceBet` / `UpdateRoulette` / `TakeItemFromNpc`: `CasinoManager.Instance` and `NPCManager.Instance`
+  are plain static fields, assigned in `Awake` and never cleared on destroy, so after leaving that
+  level they are "destroyed but not null" Unity objects — dereferencing them in the original method
+  throws `MissingReferenceException`.
 
-### 速率（`速率限制`）
+### Rates (`Rate Limiting`)
 
-每條連線的每個 RPC 各一個權杖桶。用桶而不是固定視窗計數，是因為正常玩本來就會
-爆發性地送封包（一梭子彈、撿一整排東西），固定視窗會把那些切掉。
+One token bucket per RPC per connection. A bucket rather than a fixed-window counter, because normal
+play is bursty by nature (a magazine emptied, a row of items picked up) and a fixed window would cut
+those off.
 
-上限值寫在各守衛裡（位置更新 200/s、物品位置 800/s、購買 10/s、聊天 3/s…），
-`速率上限倍率` 一次調整全部。
+The limits live in the individual guards (position updates 200/s, item positions 800/s, purchases
+10/s, chat 3/s, and so on), and `Rate Limit Multiplier` scales all of them at once.
 
-**速率丟包不累積到處置門檻。** 丟掉那個封包，洪水攻擊就已經擋住了；而正常玩本來
-就會因為卡頓、載入、網路抖動排出一小波封包，把那些當成作弊證據去累積，最後會踢掉
-完全沒做錯事的人。所以面板把「違規」和「丟包」分成兩欄，log 也分成 Warning 和 Info。
+**Rate drops do not count towards enforcement.** Dropping the packet has already stopped the flood;
+meanwhile normal play emits small bursts from stutter, loading and network jitter, and treating
+those as cheating evidence eventually kicks someone who did nothing wrong. So the panel keeps
+"violations" and "drops" in separate columns, and the log separates them into Warning and Info.
 
-實測調整過三件事：
+Three things changed after live testing:
 
-- **時鐘不能用 `Time.unscaledTime`**。它每幀才更新一次，而 FishNet 是在一幀之內
-  把整批排隊的封包處理完（卡頓後補跑好幾個 tick 更是如此），同一幀的封包全部拿到
-  同一個時間戳、桶完全不會回填，於是「卡頓後的一波」必定撞上限。改用
-  `Time.realtimeSinceStartup`。
-- **桶要夠大**：原本 `rate × 0.5` 只有半秒餘裕，改成 `rate × 2`。
-- **`HandOverItemSimulation` 是遊戲自己在洪水般地送**。
-  `ItemExtraRigidbody.OnCollisionStay`（`ItemExtraRigidbody.cs:133`）對還活著的
-  Boss 生物**每個物理步、每個接觸對**都送一次——一隻 Boss 靠在地形上就是每秒好幾百。
-  原本給的 30/s 是離譜的低估，一場實測刷出兩千多筆。它的效果幾乎都是多餘的
-  （`StartSimulateLocal` 自己會在已是本機模擬時提早 return），所以放寬到 400/s。
+- **The clock cannot be `Time.unscaledTime`.** It only updates once per frame, while FishNet
+  processes a whole queued batch of packets within a single frame (even more so after a stutter,
+  when several ticks catch up). Every packet in that frame gets the same timestamp, the bucket never
+  refills, and "the burst after a stutter" is guaranteed to hit the limit. Now it uses
+  `Time.realtimeSinceStartup`.
+- **The bucket has to be big enough**: `rate x 0.5` gave only half a second of headroom, now
+  `rate x 2`.
+- **`HandOverItemSimulation` is flooded by the game itself.**
+  `ItemExtraRigidbody.OnCollisionStay` (`ItemExtraRigidbody.cs:133`) sends one per physics step per
+  contact pair for any living boss creature — a boss leaning on terrain is several hundred a second.
+  The original 30/s was a wild underestimate; one test session produced over two thousand entries.
+  Its effect is nearly always redundant anyway (`StartSimulateLocal` returns early when it is already
+  simulating locally), so the limit was relaxed to 400/s.
 
-### 連線層
+### Connection layer
 
-- **一條連線只能有一個 Player**：原本沒有這個檢查，重複送 `SpawnPlayer` 就會多生一隻。
-- **封鎖名單**：`Kick` 只是把連線斷掉，對方可以立刻再連。名單在連線建立時比對，
-  用的是 `NetworkConnection.GetAddress()` 給的 Steam ID（傳輸層來源，偽造不了）。
+- **One Player per connection**: there was no such check, so sending `SpawnPlayer` twice spawned a
+  second one.
+- **Ban list**: `Kick` only drops the connection and the other side can reconnect immediately. The
+  list is matched when a connection is established, against the Steam ID from
+  `NetworkConnection.GetAddress()` — a transport-layer source, not forgeable.
 
-## 擋不住的（誠實列出）
+## What it cannot stop (stated plainly)
 
-- **沒有攻擊者的玩家傷害**。`HitPlayer` 的友傷檢查是
-  `if (A_6 && !UseFriendlyFire) return;`——攻擊者傳 `null` 就整個跳過。
-  而 `null` 攻擊者本來就是合法的（溺水、生物撞擊、Boss），
-  遊戲又允許**任何**客戶端代生物送出（`AttackingFish.DamageOnCollision`
-  只看 `_rigSync.IsSimulatedLocal`）。沒有身分可以驗，只能夾上限加限速。
-- **免費攤位存在的魚餌**可以被無限白拿——因為 `cost = 0` 對那種餌是合法值。
-- **不是 Steam 傳輸時沒有身分可用**。`conn.GetAddress()` 解不出 SteamID 時，
-  封鎖名單、冒名發言改寫、面板上的 Steam ID 都會失效（其餘守衛照常）。
-  第一次遇到會在 log 留一行，不會默默過去。
-- **小幅度的加速／飛行**。移動速度檢查預設關著，理由見下。
-- **錢是全隊共用的單一數字**（`MoneyManager.Money`），不是 per-player。
-  身分檢查能擋「幫別人買」，擋不掉「自己把全隊的錢花光」。那需要改遊戲的經濟模型。
+- **Player damage with no attacker.** `HitPlayer`'s friendly fire check is
+  `if (A_6 && !UseFriendlyFire) return;` — pass `null` as the attacker and the whole check is
+  skipped. And a `null` attacker is legitimate (drowning, creature collisions, bosses), while the
+  game lets **any** client send those on a creature's behalf (`AttackingFish.DamageOnCollision` only
+  looks at `_rigSync.IsSimulatedLocal`). There is no identity to verify; all that is left is a cap
+  and a rate limit.
+- **Bait that exists at a free stall** can be taken for free without limit, because `cost = 0` is a
+  legitimate value for that bait.
+- **No identity is available on a non-Steam transport.** When `conn.GetAddress()` cannot resolve a
+  SteamID, the ban list, the impersonation rewrite and the panel's Steam ID column stop working (the
+  other guards carry on). The first occurrence is logged — it does not pass silently.
+- **Small-scale speed hacks and flight.** The movement speed check is off by default; see below.
+- **Money is one number shared by the team** (`MoneyManager.Money`), not per-player. The identity
+  check stops "buying on someone else's behalf"; it cannot stop "spending the team's money on
+  yourself". That would need the game's economy model changed.
 
-## 移動速度檢查為什麼預設關著
+## Why the movement speed check is off by default
 
-位置更新走 unreliable 通道，掉包、亂序、換島傳送、上船都會讓
-「兩次更新之間的距離 ÷ 時間」暴衝。所以那段邏輯保守到近乎溫和：
-距離上一次**被接受**的更新超過 1 秒就只重設基準不判定；要**持續**超速
-0.35 秒才開始丟包；擋下來只是丟掉那個位置封包，不會踢人。
+Position updates ride an unreliable channel, and packet loss, reordering, island teleports and
+boarding a boat all make "distance between two updates divided by time" spike. So the logic is
+conservative to the point of gentleness: more than a second since the last **accepted** update and it
+only resets the baseline without judging; the speed has to stay over the limit for 0.35 seconds
+before anything is dropped; and a drop only discards that position packet — nobody is kicked.
 
-**超速時基準的位置和時間一起凍住。** 這一點第一版寫錯過，值得記下來：
-原本只凍位置、時間照樣推進成 `now`，結果 `dt` 永遠是一個 frame、距離卻永遠是
-「基準到現在」的總位移，算出來一定超速——被傳送的玩家會被**永久**擋住，
-連站著不動都救不回來，因為「超過 1 秒沒更新就重設基準」那條逃生口也被
-推進的時間戳堵死了。兩個一起凍住之後 `dt` 會隨時間變大、算出的速度隨之下降，
-所以「其實只是延遲」會自己恢復，真的傳送則最多在 1 秒後由重設基準那條路收掉。
+**When over the limit, the baseline position and time freeze together.** The first version got this
+wrong and it is worth writing down: freezing only the position while the time advanced to `now` made
+`dt` permanently one frame while the distance was the whole displacement since the baseline, so the
+computed speed was always over the limit. A teleported player would be blocked **permanently**, with
+standing still no help, because the "reset the baseline after a second with no update" escape hatch
+was itself jammed by the advancing timestamp. With both frozen, `dt` grows with time and the computed
+speed falls, so "it was only lag" recovers on its own, while a genuine teleport is cleaned up at
+worst a second later by the baseline reset.
 
-即使這樣它還是會誤判，而且擋不住小幅加速——成本效益本來就不好，
-留給「明知道有人在飛」的時候開。
+Even so it still misjudges, and it still cannot stop small speed increases — the cost/benefit was
+never good. It is there for when you already know someone is flying.
 
-## 面板（預設 F11）
+## The panel (F11 by default)
 
-三個分頁：
+Three tabs:
 
-- **連線** —— 每個人的違規次數、速率丟包數、Steam ID、最後一次被擋的原因，
-  加上踢出／封鎖按鈕。**「丟包」永遠是灰的**：它不累積到處置門檻，大數字不代表有問題。
-- **事件** —— 最近 80 次被擋下來的操作（誰、哪條 RPC、什麼原因、多久以前）。
-- **封鎖** —— 名單內容，可以逐筆解除。
+- **Connections** — per person: violations, rate drops, Steam ID, the reason they were last blocked,
+  plus kick and ban buttons. **"Drops" is always greyed out**: it does not count towards enforcement,
+  so a large number there does not mean anything is wrong.
+- **Events** — the last 80 blocked actions (who, which RPC, why, how long ago).
+- **Bans** — the list, with per-entry removal.
 
-踢出與封鎖是**兩段式**的：第一下把按鈕變成「確定？」，第二下才送出，三秒沒動作自動解除。
+Kick and ban are **two-step**: the first press turns the button into "Sure?", the second sends it,
+and three seconds of inaction cancels.
 
-面板全部用固定 Rect 的 `GUI.*` 畫，**沒有用 GUILayout**。
-本專案其他 IMGUI mod 有一條「會改變版面結構的狀態變更要延到 Layout 事件」的規則，
-那是 GUILayout 專屬的問題——它在 Layout 幀算好控件樹，之後的事件照那棵樹取值，
-對不上就 NRE。固定 Rect 沒有那棵樹，所以切分頁、加一列事件、按鈕變成「確定？」
-都可以當場生效。代價是要自己算座標。
+The whole panel is drawn with fixed-`Rect` `GUI.*` calls and **no GUILayout**. The other IMGUI mods in
+this project follow a rule about deferring layout-changing state to the Layout event; that is a
+GUILayout-specific problem — it builds a control tree on the Layout frame and later events index into
+that tree, hitting a NullReferenceException when they disagree. Fixed rects have no such tree, so
+switching tabs, appending an event row, or turning a button into "Sure?" can all take effect
+immediately. The price is computing coordinates by hand.
 
-連線清單的快照在 `Update` 算好、`OnGUI` 只讀：`OnGUI` 一幀會跑好幾次，
-而 `GetAddress()` 會問到傳輸層，不是可以一幀呼叫十幾次的東西。
+The connection list snapshot is computed in `Update` and only read in `OnGUI`: `OnGUI` runs several
+times per frame, and `GetAddress()` reaches into the transport layer — not something to call a dozen
+times a frame.
 
-## 設定（`BepInEx/config/htf.guardian.cfg`）
+## Settings
 
-| 分區 | 項目 |
+`BepInEx/config/htf.guardian.cfg`, written on first run. Everything is also editable in game through
+[HtF Config Menu](https://github.com/HHim8826/HtF-Mods/tree/main/mods/HtF.ConfigMenu) (F9).
+
+| Section | Settings |
 |---|---|
-| 一般 | 啟用、也檢查房主自己 |
-| 驗證 | 檢查操作者身分／購買價格／數值範圍／索引範圍、速率限制、速率上限倍率、結束遊戲限房主、移動速度檢查、最高移動速度 |
-| 上限 | 玩家傷害、無來源傷害、生物傷害、分數倍率、單次彈丸數、聊天字數 |
-| 處置 | 違規上限、違規衰減秒數、超過時（只記錄／踢出／踢出並封鎖）、通報冷卻秒數、在聊天視窗提示 |
-| 介面 | 面板按鍵、縮放、字型 |
+| General | Enabled, Also Check The Host |
+| Validation | Check Actor Identity / Purchase Prices / Value Ranges / Index Ranges, Rate Limiting, Rate Limit Multiplier, Only The Host May End The Run, Movement Speed Check, Maximum Movement Speed |
+| Limits | Damage to a player, sourceless damage, damage to a creature, score multiplier, projectiles per shot, chat length |
+| Enforcement | Violation Limit, Violation Decay, Action (Log Only / Kick / Kick And Ban), Report Cooldown, Announce In Chat |
+| Interface | Panel Key, UI Scale, Font |
 
-**處置預設是「只記錄」。** 先看幾場面板上的數字再決定要不要自動踢人——
-延遲本來就會製造零星的假違規，而踢錯人比漏抓一次難收拾。
+**Enforcement starts on "Log Only".** Watch the panel for a few sessions before letting it kick
+people automatically — latency alone produces the occasional false positive, and kicking the wrong
+person is harder to undo than missing one cheat.
 
-**違規次數會隨時間衰減**（預設乾淨玩 60 秒抵掉一次）。沒有衰減的話，
-「違規上限 40」實際上是「這輩子 40 次」：計數只增不減，那等於把餘裕
-單調消耗掉，一個完全正常的玩家連玩幾小時之後也會踩到上限。
-有衰減，上限的意思才是「短時間內密集違規」——那才是真正想抓的東西。
+**Violations decay over time** (by default, 60 seconds of clean play forgives one). Without decay,
+"violation limit 40" really means "40 in a lifetime": the counter only ever goes up, so the headroom
+is consumed monotonically and a perfectly normal player hits the limit after a few hours. With decay,
+the limit means "a burst of violations" — which is the thing actually worth catching.
 
-**「也檢查房主自己」預設關閉**：房主的連線就是伺服器本身，遊戲有好幾處是在伺服器端
-代所有人送 RPC 的（`ExplosionManager.ServerExplode` 的爆炸傷害、引信到期的炸藥、
-Boss 攻擊），用一般規則檢查它們一定誤判。
+**"Also Check The Host" is off by default**: the host's connection *is* the server, and several of the
+game's own systems send RPCs on everyone's behalf from there (`ExplosionManager.ServerExplode`
+damage, expired explosives, boss attacks). Checking those with the normal rules is guaranteed to
+misfire.
 
-封鎖名單在 `BepInEx/config/HtF.Guardian/banned.txt`，一行一個 Steam ID，
-`#` 之後是註解。遊戲執行中手動改檔案的話，要在面板上按「重新載入名單」。
+The ban list lives at `BepInEx/config/HtF.Guardian/banned.txt`, one Steam ID per line, `#` starts a
+comment. If you edit the file while the game is running, press "Reload list" on the panel.
 
-## 和 HtF.DazedTools 一起用
+### Why the .cfg file is in Chinese
 
-`HtF.DazedTools` 送的就是這些 RPC。**你當房主時它們不衝突**——房主預設豁免，
-所以指令照常有效。你在別人的房間裡用 DazedTools，而對方裝了 Guardian，
-那些指令就會被擋掉，這正是預期行為。
+The section and key names inside the `.cfg` are Chinese, and they stay that way in every language.
+They are identifiers, not labels: BepInEx uses them to find your saved values, so translating them
+would make every setting you had tuned look like a brand new one and reset it to default. The names
+in the table above are what the in-game settings page shows you.
 
-## 建置
+## Using it with HtF Dazed Tools
+
+[HtF Dazed Tools](https://github.com/HHim8826/HtF-Mods/tree/main/mods/HtF.DazedTools) sends exactly
+these RPCs. **They do not conflict while you are the host** — the host is exempt by default, so the
+commands still work. Use Dazed Tools in someone else's lobby while they run Guardian and those
+commands get blocked, which is the intended behaviour.
+
+## Compatibility
+
+- *How to Fish* 1.0.9, Unity 6000.4.4f1 (Mono)
+- BepInEx 5.4.23.5, Harmony 2.9
+
+## Building
 
 ```bash
 dotnet build mods/HtF.Guardian/HtF.Guardian.csproj
 ```
 
-路徑可用 `-p:GameManaged="..."` / `-p:ProfileDir="..."` 覆寫，預設寫在 `../Common.props`。
+Paths can be overridden with `-p:GameManaged="..."` / `-p:ProfileDir="..."`; the defaults live in
+`../Common.props`.
 
-## 尚未在遊戲內驗證
+## Not yet verified in game
 
-程式碼層面已經做過的驗證：56 條 RPC 的參數位置與型別、守衛的回傳型別，
-都用 `MetadataLoadContext` 對**遊戲實際載入的那份 `Assembly-CSharp.dll`** 逐一比對過
-（63 個位置綁定，0 個不符）；`__N` 位置注入與 `ref` 寫回也用遊戲自己的
-`0Harmony.dll` 實跑驗證過。
+Verified at the code level: the parameter positions and types of all 56 RPCs, and the guards' return
+types, were checked one by one with `MetadataLoadContext` against **the exact `Assembly-CSharp.dll`
+the game loads** (63 positional bindings, 0 mismatches). `__N` positional injection and `ref`
+write-back were verified by running against the game's own `0Harmony.dll`.
 
-`[未驗證]` 但仍需要實際連線測試的：多人房間裡的誤判率、各個速率上限的實際餘裕、
-被擋下來時客戶端的表現（本機預測已經演出效果、伺服器沒接受，會看到位置或血量彈回）。
+Still needing a real session: the false-positive rate in a populated lobby, the real headroom of each
+rate limit, and what a blocked action looks like on the client (local prediction has already played
+the effect and the server did not accept it, so you see position or health snap back).
+
+## Links
+
+- [Source, and the other seven HtF mods](https://github.com/HHim8826/HtF-Mods)
+- [Changelog](https://github.com/HHim8826/HtF-Mods/blob/main/mods/HtF.Guardian/CHANGELOG.md)
+- MIT licensed

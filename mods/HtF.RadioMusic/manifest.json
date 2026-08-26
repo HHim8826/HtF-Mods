@@ -1,0 +1,9 @@
+{
+  "name": "HtF_RadioMusic",
+  "version_number": "1.0.0",
+  "website_url": "https://github.com/HHim8826/HtF-Mods",
+  "description": "Your own music on the in-game radio: one song per frequency, auto-advance, adjustable static, and a Listen Together mode that keeps the whole lobby on the same track. English / 繁體中文.",
+  "dependencies": [
+    "BepInEx-BepInExPack-5.4.2305"
+  ]
+}

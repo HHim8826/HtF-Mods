@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace HtF.DazedTools
 {
-    [BepInPlugin(Guid, "HtF Dazed Tools", "1.0.0")]
+    [BepInPlugin(Guid, ModInfo.Name, ModInfo.Version)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "htf.dazedtools";
