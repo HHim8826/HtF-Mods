@@ -256,7 +256,7 @@ namespace HtF.RadioMusic
             for (int c = 0; c < 16; c++) if (!Cursor.ContainsKey(c)) Cursor[c] = 1;
         }
 
-        private static List<AudioClip> TracksFor(int channelIndex, int totalChannels)
+        internal static List<AudioClip> TracksFor(int channelIndex, int totalChannels)
         {
             List<AudioClip> explicitList;
             if (ByChannel.TryGetValue(channelIndex, out explicitList) && explicitList.Count > 0)
