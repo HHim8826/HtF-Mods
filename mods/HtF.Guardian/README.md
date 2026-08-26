@@ -59,7 +59,7 @@ RpcLogic___X(a, b, c)
 | `src/Report.cs` | 記錄違規、處置（踢出／封鎖）、餵資料給面板 |
 | `src/Limiter.cs` | 每連線每 RPC 的權杖桶 |
 | `src/Prices.cs` | 從場上販賣點取真實售價 |
-| `src/Damagers.cs` | 「這隻生物最後是誰打的」，只服務 `SetItemMultiplier` |
+| `src/Damagers.cs` | 「最近誰打過這隻生物」，只服務 `SetItemMultiplier` |
 | `src/Speed.cs` | 移動速度檢查（預設關閉） |
 | `src/Bans.cs` | 封鎖名單檔 |
 | `src/Watcher.cs` | 連線事件：封鎖名單在這裡生效 |
@@ -154,9 +154,16 @@ RPC 參數裡的 `Player`（或物品的持有者）必須就是送出封包的�
 
 它的送出點是 `Creature.LocalHit`（`Creature.cs:397`）——擊殺者的客戶端替剛死的
 生物設倍率，而擊殺者既不是持有者也不是模擬者（在水裡被射死的魚沒有人拿著）。
-所以驗的是「發送端是不是**最後打這隻的人**」：那份資訊 `HitCreature` 的守衛
+所以驗的是「發送端**最近有沒有打過這隻**」：那份資訊 `HitCreature` 的守衛
 本來就會看到，順手記進 `Damagers` 就好。順序有保證——`LocalHit` 先送
 `HitCreature` 再送 `SetItemMultiplier`，兩條都是 Reliable 同序。
+
+⚠ **不能只認「最後打的那一個人」**（第一版這樣寫）。兩條 RPC 之間隔著一次
+網路往返，多人一起圍毆同一隻 Boss 或同一群魚時，A 的 `HitCreature` 與
+`SetItemMultiplier` 中間插進 B 的非致命一擊是**常態**——每隻生物只留一筆記錄
+就會被蓋掉，A 的正常擊殺被判成「目標無效」，而那是會計入違規證據的類型，
+累積下去踢掉的是無辜的房客。所以 `Damagers` 記的是「10 秒內打過這隻的所有人」，
+發送端在裡面就放行；攻擊者一樣得先真的打到那隻生物才有資格設倍率。
 
 ⚠ **不要用 `Creature.IsDead` 當條件**（第一版這樣寫，實測一場擋掉 43 次正常擊殺）。
 它是 `Hp <= 0`，而 `Creature.Hp` 是一個**普通的 auto-property**，只在

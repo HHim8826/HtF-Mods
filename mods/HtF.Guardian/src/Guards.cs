@@ -393,9 +393,14 @@ namespace HtF.Guardian
             //
             // 這條沒有「操作者」可以驗：唯一的送出點 Creature.LocalHit（Creature.cs:397）
             // 是擊殺者的客戶端替剛死的生物設值，而擊殺者既不是持有者也不是模擬者。
-            // 所以驗的是「發送端是不是最後打這隻的人」——那份資訊由 HitCreature
+            // 所以驗的是「發送端最近有沒有打過這隻」——那份資訊由 HitCreature
             // 的守衛順手記下來（見 Damagers）。順序有保證：LocalHit 先送 HitCreature
             // 再送 SetItemMultiplier，兩條都是 Reliable 同序。
+            //
+            // **不能只認「最後打的那一個人」。** 兩條 RPC 之間隔著一次網路往返，
+            // 多人一起打同一隻時，中間插進別人的非致命一擊是常態——只留一筆記錄
+            // 就會被蓋掉，正常擊殺被判成「目標無效」並計入違規證據，
+            // 累積下去踢掉的是無辜的房客。所以 Damagers 記的是一份最近攻擊者清單。
             //
             // **不要用 Creature.IsDead 當條件。** 它是 `Hp <= 0`，而 `Creature.Hp`
             // 是一個普通的 auto-property，只在 `OnStartClient` 和
@@ -407,7 +412,7 @@ namespace HtF.Guardian
             if (Id)
             {
                 Creature creature = __0 ? __0.Creature : null;
-                if (!creature || !Damagers.IsLastDamager(creature, Sender.Current))
+                if (!creature || !Damagers.IsRecentDamager(creature, Sender.Current))
                     return G.Deny("SetItemMultiplier", Why.目標無效);
             }
 
