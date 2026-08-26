@@ -1,4 +1,4 @@
-# How to Fish — 九個獨立 mod
+# How to Fish — 八個獨立 mod
 
 每個都是獨立的 DLL、獨立的設定檔，可以單獨安裝，彼此之間沒有相依。
 共用的只有建置設定（`Common.props`）和雙語底層（`Shared/Loc.cs`），
@@ -10,8 +10,7 @@
 | `HtF.AmmoCounter` | `htf.ammocounter` | 只有你自己 | 手上槍械的剩餘子彈 |
 | `HtF.Guardian` | `htf.guardian` | 只有房主 | ServerRpc 驗證層、速率限制、踢出／封鎖 |
 | `HtF.HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值 |
-| `HtF.Economy` | `htf.economy` | 房主（顯示要一致則全員） | 賣價、花費、起始金錢 |
-| `HtF.FishingEcology` | `htf.fishingecology` | 只有房主 | 抽魚權重、保底、咬鉤時間 |
+| `HtF.Economy` | `htf.economy` | 房主（售價顯示要一致則全員） | 賣價、花費、起始金錢、抽魚權重、保底、咬鉤時間 |
 | `HtF.RadioMusic` | `htf.radiomusic` | 只有你自己 | 收音機自訂音樂、雜訊與音量 |
 | `HtF.ConfigMenu` | `htf.configmenu` | 只有你自己 | 遊戲內設定管理頁面（通用） |
 | `HtF.DazedTools` | `htf.dazedtools` | 只有你自己 | ServerRPC 指令工具（見該資料夾的 README） |
@@ -30,7 +29,7 @@ dotnet build HtF.HudNumbers/HtF.HudNumbers.csproj
 
 ## 中英雙語（全部 mod）
 
-九個 mod 的介面都有中英兩份文字。底層是 `mods/Shared/Loc.cs`，由 `Common.props`
+八個 mod 的介面都有中英兩份文字。底層是 `mods/Shared/Loc.cs`，由 `Common.props`
 **編譯進每一個 mod**——跟建置設定一樣是編譯期共用，每個 DLL 裡都有自己的一份，
 執行期彼此不相依，單獨安裝照樣能用。
 
@@ -100,7 +99,7 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
 - **短的 getter／setter → 不要 patch，直接寫值。**
   `HtF.HostRules` 用反射呼叫私有 setter 寫入乘數，並在遊戲設定它們的地方
   （`ServerSettings.OnDifficultyChange`）之後補蓋一次。
-  `HtF.FishingEcology` 的咬鉤時間同理，改的是 `BaitInfo._catchTimeMinMax` 而不是
+  `HtF.Economy` 的咬鉤時間同理，改的是 `BaitInfo._catchTimeMinMax` 而不是
   `Bait.RandomizedCatchTime` 的 setter。
 - **夠大的方法 → patch 沒問題。**
   `Item.TotalWorth`（五個乘法加一次 `AnimationCurve.Evaluate`）、
@@ -206,7 +205,14 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
 **做不到的**：提高生命上限。`Regenerate()` 裡的回血上限是寫死的字面值 `100`，
 不是可調欄位，所以只改起始生命會得到一個半殘的結果——寧可不做。
 
-## HtF.Economy — 經濟調整
+## HtF.Economy — 經濟與釣魚生態
+
+原本是兩個 mod（`HtF.Economy` 和 `HtF.FishingEcology`），**已合併**。
+理由很直接：**魚是錢的來源**，調完抽魚權重卻沒調售價（或反過來）幾乎一定會失衡，
+分成兩個 GUID 只是讓人開兩個設定頁面調同一條曲線。而且兩邊的生效條件完全一樣
+——都在伺服器端結算，房主裝了就對全房生效。
+
+### 金錢
 
 - **賣價倍率** → `Item.TotalWorth`。這是唯一的售價算式，`MoneyManager.SellItem`
   直接用它加錢、UI 也用它顯示，一個點全涵蓋。
@@ -220,14 +226,14 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
 `Purchasable` 子類，統一改要動很多點；扣款則只有一個匯流點。
 
 ⚠ 只有房主裝的話：拿到的錢是調整後的（伺服器權威），但其他人 UI 上顯示的售價是原價。
-要顯示一致就大家都裝。
+要顯示一致就大家都裝。**釣魚那半沒有這個問題**，它是純房主專屬的。
 
-## HtF.FishingEcology — 釣魚生態
+### 釣魚生態
 
 抽魚只有一個入口：`CreatureManager.GetRandomItem(pos, weights)`，
 魚餌把 `BaitInfo.ItemWeights` 傳進去做加權隨機。
 
-這個 mod 在進入該方法前，把 `ref` 參數換成調整過的**副本**——
+在進入該方法前，把 `ref` 參數換成調整過的**副本**——
 **不會改到 `BaitInfo` 資產本身**，那是共用的 ScriptableObject，改下去整個 session 都會髒掉。
 用 prefix 換表而不是自己重寫抽取邏輯也是刻意的：原方法裡有「場上已有 Boss 就退回
 預設魚」這條規則和權重跑完沒中的保險，照抄一遍只會多出對不上的風險。
@@ -243,6 +249,22 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
   `OnStartServer` 掛上 `TimeManager.OnPostTick`。有做原值快照，倍率一律從快照算，退出時還原。
 
 `除錯 / 記錄每次抽取` 打開後會把抽到什麼寫進 log，調倍率時很有用。
+`釣魚 / 啟用釣魚生態` 關掉就完全走原本的權重，不影響上面的金錢倍率。
+
+### 升級時要做的一件事
+
+**把 `BepInEx/plugins/HtF.FishingEcology` 整個資料夾刪掉。**
+兩份同時載入時，抽魚權重會被 patch 兩次——兩邊各自把 `ref weights` 換成自己算的副本，
+倍率變成**疊乘**，而且不會有任何錯誤訊息。這是 GUID 合併最容易踩的坑，
+所以 mod 自己會在第一個 `Update` 檢查 `Chainloader.PluginInfos` 並在 log 大聲說一次。
+
+（在 `Update` 而不是 `Awake` 檢查，是因為 BepInEx 邊載入邊填 `PluginInfos`，
+而載入順序按 GUID 排——`htf.economy` 排在 `htf.fishingecology` 前面，
+在 `Awake` 當下對方還沒進去。）
+
+設定檔方面：**金錢那三個 section（倍率／存檔／除錯）維持原名原 key**，
+所以既有的 `htf.economy.cfg` 直接沿用，調好的值不會掉回預設。
+釣魚那半的設定跟著舊 GUID 一起失效，趁機收成一個 `釣魚` section，要重調一次。
 
 ## HtF.RadioMusic — 收音機自訂音樂
 
@@ -387,7 +409,7 @@ Button 依 parent 分組，挑出「最像主要按鈕直欄」的那一組：
 
 ### 中英雙語
 
-「語言」設定（`自動 / 中文 / 英文`）在這個 mod 裡，**九個 mod 全部跟著它走**。
+「語言」設定（`自動 / 中文 / 英文`）在這個 mod 裡，**八個 mod 全部跟著它走**。
 機制見下面〈中英雙語（全部 mod）〉。這個頁面自己的文字在 `Localization.cs`，
 設定項的英文名稱與說明則寫在 `Plugin.Awake` 的 `Loc.Bind` 那幾行上。
 
