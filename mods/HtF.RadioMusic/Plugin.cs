@@ -13,6 +13,9 @@ namespace HtF.RadioMusic
     /// 純客戶端：頻率是 SyncVar 會同步（別人看得到你在轉台），但音檔是本地的，
     /// 所以換成自訂音樂後只有你自己聽得到，不會影響別人，也不需要別人裝。
     ///
+    /// 「同步播放」是這條規則的例外，但仍然不送封包：曲目與位置都從 FishNet 的
+    /// 網路時間算出來，同樣的檔案在每台機器上會得到同樣的答案。見 <see cref="Sync"/>。
+    ///
     /// 順帶把那個「沙沙聲」做成可調。它是刻意的——Radio.ApplyVolume 最後一行
     ///     _noiseSource.volume = (1f - 最接近頻道的準度) * 0.075f;
     /// 在模擬 FM 空頻雜訊：調準了是 0，偏掉才變大。
@@ -25,7 +28,7 @@ namespace HtF.RadioMusic
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<float> NoiseVolume, MusicVolume;
-        internal static ConfigEntry<bool> PlayThroughBoss;
+        internal static ConfigEntry<bool> PlayThroughBoss, SyncPlayback;
         internal static ConfigEntry<KeyboardShortcut> NextTrackKey, ReloadKey;
 
         private Harmony _harmony;
@@ -59,6 +62,20 @@ namespace HtF.RadioMusic
                 "By default the game mutes the whole radio when a boss shows up (both stations and noise drop to zero).\n"
                 + "Turn this on to recompute the volume and keep the music going.");
 
+            SyncPlayback = Loc.Bind(Config, "聲音", "同步播放", false, "Listen Together",
+                "讓同一個房間的人聽到同一首、同一個位置。\n"
+                + "前提：每個人都要裝這個 mod，而且音樂資料夾的內容要一模一樣"
+                + "——mod 沒辦法替你發音檔，這一點只能自己約好。\n"
+                + "原理：頻道的曲目串成一條連續的時間軸（像電台節目表），"
+                + "由 FishNet 的網路時間決定現在播到哪裡。純計算，不送任何封包。\n"
+                + "打開後「下一首」會失效——跳過是本機動作，沒辦法讓其他人跟著跳。",
+                "Make everyone in the lobby hear the same track at the same position.\n"
+                + "Requires everyone to install this mod and have identical music folders "
+                + "— the mod cannot hand out audio files, so that part is up to you.\n"
+                + "How it works: each station's tracks form one continuous timeline (like a real station's schedule), "
+                + "and FishNet's network time decides where playback currently is. Pure computation, no packets.\n"
+                + "While this is on, Next Track does nothing: skipping is a local action and cannot be shared.");
+
             NextTrackKey = Loc.Bind(Config, "按鍵", "下一首", new KeyboardShortcut(KeyCode.F7), "Next Track",
                 "同一個頻道放多首時，切到下一首。",
                 "Skip to the next track when a station has more than one.");
@@ -87,15 +104,28 @@ namespace HtF.RadioMusic
         {
             if (NextTrackKey.Value.IsDown())
             {
-                MusicLibrary.AdvanceAll();
-                RadioPatcher.ApplyToAll();
-                Log.LogInfo("已切到下一首。");
+                if (SyncPlayback.Value)
+                {
+                    // 同步模式的選曲是從網路時間算出來的，本機游標根本沒被讀。
+                    // 切一首只會讓自己脫隊，所以直接擋掉並說清楚為什麼。
+                    Log.LogInfo("「同步播放」開著時不能切歌——跳過是本機動作，沒辦法讓其他人跟著跳。");
+                }
+                else
+                {
+                    MusicLibrary.AdvanceAll();
+                    RadioPatcher.ApplyToAll();
+                    Log.LogInfo("已切到下一首。");
+                }
             }
             if (ReloadKey.Value.IsDown())
             {
                 StopAllCoroutines();
                 StartCoroutine(LoadThenApply());
             }
+
+            // 同步模式要每幀維持：一首放完要接下一首，而 ApplyVolume 只在
+            // 轉台和 Boss 事件時才被呼叫，接不了。
+            RadioPatcher.TickSync();
         }
 
         private System.Collections.IEnumerator LoadThenApply()
