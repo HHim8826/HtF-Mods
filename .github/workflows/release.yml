@@ -1,0 +1,98 @@
+# 發布：把八個 mod 打包成 Thunderstore 的 zip，掛上 GitHub Release。
+#
+#   推一個 v* 的 tag  -> 建置、打包、**建立 Release 並附上八個 zip**
+#   手動 workflow_dispatch -> 一樣建置打包，但只留成 artifact，不建 Release
+#
+# 後者是給你先試跑用的：想確認這次包出來的東西沒問題，先手動跑一次，
+# 下載 artifact 看過再推 tag。
+#
+# **tag 只是這個 repo 的發布標記，不是套件版本。** 八個套件各自有自己的版本號
+# （寫在各 mod 的 .csproj，manifest.json 跟著對帳），一次發布裡它們的版本
+# 通常是不一樣的。tag 叫 v2026.08.26 或 v3 都行。
+#
+# 和 ci.yml 的 build 一樣要遊戲的參照組件，設定方式也一樣
+# （repository variable GAME_LIBS_REPO + secret GAME_LIBS_TOKEN，見 README）。
+# **差別是這裡沒設定就直接失敗，不是跳過**——一個沒有任何 zip 的 Release
+# 比一個紅掉的 workflow 難處理得多。
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write        # 建立 Release 要寫入權限
+
+jobs:
+  package:
+    name: 打包八個套件
+    runs-on: windows-latest
+    env:
+      GAME_LIBS_REPO: ${{ vars.GAME_LIBS_REPO }}
+      GAME_LIBS_TOKEN: ${{ secrets.GAME_LIBS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 檢查有沒有設定參照組件來源
+        shell: bash
+        run: |
+          if [ -z "$GAME_LIBS_REPO" ] || [ -z "$GAME_LIBS_TOKEN" ]; then
+            echo "::error::沒有設定遊戲參照組件，沒辦法建置，也就沒有東西可以發布。把自己的 Managed/ 與 BepInEx/core/ 放進一個私有 repo，設定 repository variable GAME_LIBS_REPO 與 secret GAME_LIBS_TOKEN，步驟見 README 的「持續整合」。"
+            exit 1
+          fi
+
+      - name: 取得遊戲參照組件（私有 repo）
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.GAME_LIBS_REPO }}
+          token: ${{ secrets.GAME_LIBS_TOKEN }}
+          path: game-libs
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: 打包
+        shell: pwsh
+        run: |
+          $managed = Join-Path $env:GITHUB_WORKSPACE 'game-libs\Managed'
+          $core    = Join-Path $env:GITHUB_WORKSPACE 'game-libs\BepInEx\core'
+
+          # 先把話講清楚，不然錯誤會變成 Common.props 那條看不出前因後果的 CheckPaths
+          foreach ($pair in @(@($managed, 'Assembly-CSharp.dll'), @($core, 'BepInEx.dll'))) {
+            if (-not (Test-Path (Join-Path $pair[0] $pair[1]))) {
+              Write-Host "::error::$($pair[0]) 底下沒有 $($pair[1])。私有 repo 的版面要是根目錄放 Managed/ 和 BepInEx/core/。"
+              exit 1
+            }
+          }
+
+          # 這支腳本開頭會先跑 check_repo.py。版本號對不上就不該包——
+          # Thunderstore 的版本號用掉不能重傳。
+          python .github/tools/make_packages.py `
+            --game-managed "$managed" `
+            --bepinex-core "$core"
+
+      - name: 收走 zip
+        uses: actions/upload-artifact@v7
+        with:
+          name: thunderstore-packages
+          path: dist
+          if-no-files-found: error
+
+      - name: 建立 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          # PowerShell 不會替原生指令展開萬用字元，要自己列出來
+          $zips = (Get-ChildItem dist/*.zip | ForEach-Object { $_.FullName })
+          Write-Host "$tag：$($zips.Count) 個 zip"
+          gh release create $tag $zips --title $tag --notes-file dist/RELEASE_NOTES.md

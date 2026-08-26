@@ -98,6 +98,44 @@ python .github/tools/make_icons.py
 Thunderstore **不收重覆的版本號**——送錯了那個號碼就用掉了，只能再開一版。
 所以這一條是硬檢查，不是提醒。
 
+### 打包
+
+```bash
+python .github/tools/make_packages.py
+```
+
+產出在 `dist/`，一個 mod 一個 zip（`HtF_Economy-1.1.0.zip`），外加一份 `RELEASE_NOTES.md`。
+腳本**開頭會先跑 `check_repo.py`**：版本號對不上就不該包，理由同上。
+
+| 參數 | 用途 |
+|---|---|
+| `--no-build` | 不重新建置，用 `bin/Release` 底下現成的 DLL |
+| `--only HtF.Economy` | 只重包一個。這時不會清掉 `dist/` 裡的其他 zip，也不會動 `RELEASE_NOTES.md` |
+| `--game-managed` / `--bepinex-core` | 覆寫參照組件的路徑 |
+
+打包不會順手裝進你的 r2modman——`PluginOut` 會被蓋掉，
+`Common.props` 的 `DeployToProfile` 寫到 `dist/` 底下的暫存夾，結束時刪掉。
+
+### 發布
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml)：
+
+| 觸發 | 做什麼 |
+|---|---|
+| 推一個 `v*` 的 tag | 建置、打包、**建立 Release 並附上八個 zip** |
+| 手動 workflow_dispatch | 一樣建置打包，但只留成 artifact，不建 Release |
+
+手動那條是給你先試跑用的：下載 artifact 看過沒問題再推 tag。
+
+**tag 只是這個 repo 的發布標記，不是套件版本。** 八個套件各有自己的版本號，
+一次發布裡它們通常是不一樣的，所以 tag 叫 `v2026.08.26` 或 `v3` 都行。
+
+發布要用和 CI 的 `build` 一樣的參照組件設定（見下面「持續整合」），
+**但這裡沒設定是直接失敗，不是跳過**——一個沒有任何 zip 的 Release
+比一個紅掉的 workflow 難處理得多。
+
+上傳時 `dist/` 裡的 zip 可以直接丟進 Thunderstore 的上傳頁面，不用解壓重包。
+
 ## 持續整合
 
 `.github/workflows/ci.yml`，推上 `main` 和開 PR 時跑：

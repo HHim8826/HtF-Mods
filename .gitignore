@@ -24,5 +24,6 @@
 bin/
 obj/
 __pycache__/
+dist/
 *.user
 .vs/
