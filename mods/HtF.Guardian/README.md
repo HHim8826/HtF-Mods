@@ -117,6 +117,19 @@ RPC 參數裡的 `Player`（或物品的持有者）必須就是送出封包的�
 驗證方式是 `player.Owner` 對上 reader 給的 `conn`——`Player` 是用
 `base.Spawn(player.gameObject, conn, ...)` 生成的，擁有者就是當初送 `SpawnPlayer` 的人。
 
+**房主豁免用三個獨立訊號判斷，不只靠 `IsLocalClient`。** 這是實測踩到的：
+`NetworkConnection.IsLocalClient` 是
+`NetworkManager != null && NetworkManager.ClientManager.Connection == this`，
+而 `NetworkConnection.NetworkManager` 是可能沒被設起來的——FishNet 自己在
+`GetAddress()` 那條路上就有 `if (NetworkManager == null) NetworkManager = InstanceFinder.NetworkManager;`
+這種補救。那個欄位一旦是 null，`IsLocalClient` 就**靜靜地回 false**，
+房主的每一個封包都會被當成外人檢查，看起來就像「正常玩也會被擋」。
+
+所以現在是：`IsLocalClient` → 直接跟 `ClientManager.Connection` 比 `ClientId`
+（不經過 `conn.NetworkManager`）→ 比對 `Player.LocalPlayer.Owner`（完全不碰 FishNet
+的連線語意）。任一成立就算房主。第一次判定「這條連線不是房主」時會在 log 印出
+三個 id，判斷有問題時一眼就看得出來。
+
 **「誰有資格」不是只有持有者一種。** 每條 RPC 要對上的是它自己那個送出點的閘門，
 照抄同一套會把正常玩的人擋掉：
 
@@ -144,6 +157,13 @@ RPC 參數裡的 `Player`（或物品的持有者）必須就是送出封包的�
 所以驗的是「發送端是不是**最後打這隻的人**」：那份資訊 `HitCreature` 的守衛
 本來就會看到，順手記進 `Damagers` 就好。順序有保證——`LocalHit` 先送
 `HitCreature` 再送 `SetItemMultiplier`，兩條都是 Reliable 同序。
+
+⚠ **不要用 `Creature.IsDead` 當條件**（第一版這樣寫，實測一場擋掉 43 次正常擊殺）。
+它是 `Hp <= 0`，而 `Creature.Hp` 是一個**普通的 auto-property**，只在
+`OnStartClient` 和 `OnHealthChange` 的**客戶端那一輪**被寫——那個回呼開頭第一行
+就是 `if (asServer) return;`（`Creature.cs:496`）。伺服器端改的是 SyncVar
+`_hp.Value`，`Hp` 這個鏡像要等客戶端回呼才跟上，RPC 剛進來的那一刻它還是舊值。
+名字看起來像伺服器狀態，其實是客戶端鏡像。
 
 ### 價格（`檢查購買價格`）
 
@@ -188,8 +208,25 @@ RPC 參數裡的 `Player`（或物品的持有者）必須就是送出封包的�
 每條連線的每個 RPC 各一個權杖桶。用桶而不是固定視窗計數，是因為正常玩本來就會
 爆發性地送封包（一梭子彈、撿一整排東西），固定視窗會把那些切掉。
 
-上限值寫在各守衛裡（位置更新 120/s、物品位置 400/s、購買 10/s、聊天 3/s…），
+上限值寫在各守衛裡（位置更新 200/s、物品位置 800/s、購買 10/s、聊天 3/s…），
 `速率上限倍率` 一次調整全部。
+
+**速率丟包不累積到處置門檻。** 丟掉那個封包，洪水攻擊就已經擋住了；而正常玩本來
+就會因為卡頓、載入、網路抖動排出一小波封包，把那些當成作弊證據去累積，最後會踢掉
+完全沒做錯事的人。所以面板把「違規」和「丟包」分成兩欄，log 也分成 Warning 和 Info。
+
+實測調整過三件事：
+
+- **時鐘不能用 `Time.unscaledTime`**。它每幀才更新一次，而 FishNet 是在一幀之內
+  把整批排隊的封包處理完（卡頓後補跑好幾個 tick 更是如此），同一幀的封包全部拿到
+  同一個時間戳、桶完全不會回填，於是「卡頓後的一波」必定撞上限。改用
+  `Time.realtimeSinceStartup`。
+- **桶要夠大**：原本 `rate × 0.5` 只有半秒餘裕，改成 `rate × 2`。
+- **`HandOverItemSimulation` 是遊戲自己在洪水般地送**。
+  `ItemExtraRigidbody.OnCollisionStay`（`ItemExtraRigidbody.cs:133`）對還活著的
+  Boss 生物**每個物理步、每個接觸對**都送一次——一隻 Boss 靠在地形上就是每秒好幾百。
+  原本給的 30/s 是離譜的低估，一場實測刷出兩千多筆。它的效果幾乎都是多餘的
+  （`StartSimulateLocal` 自己會在已是本機模擬時提早 return），所以放寬到 400/s。
 
 ### 連線層
 
@@ -233,7 +270,8 @@ RPC 參數裡的 `Player`（或物品的持有者）必須就是送出封包的�
 
 三個分頁：
 
-- **連線** —— 每個人的違規次數、Steam ID、最後一次被擋的原因，加上踢出／封鎖按鈕。
+- **連線** —— 每個人的違規次數、速率丟包數、Steam ID、最後一次被擋的原因，
+  加上踢出／封鎖按鈕。**「丟包」永遠是灰的**：它不累積到處置門檻，大數字不代表有問題。
 - **事件** —— 最近 80 次被擋下來的操作（誰、哪條 RPC、什麼原因、多久以前）。
 - **封鎖** —— 名單內容，可以逐筆解除。
 

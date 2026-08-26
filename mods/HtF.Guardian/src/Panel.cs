@@ -44,6 +44,7 @@ namespace HtF.Guardian
             internal ulong Steam;
             internal bool IsHost;
             internal int Count;
+            internal int RateDrops;
             internal string Last;
         }
 
@@ -108,6 +109,7 @@ namespace HtF.Guardian
                     Steam = Sender.SteamIdOf(c),
                     IsHost = isHost,
                     Count = o != null ? o.Count : 0,
+                    RateDrops = o != null ? o.RateDrops : 0,
                     Last = o == null ? "—" : L.WhyText(o.LastWhy) + " · " + o.LastRpc,
                 });
             }
@@ -219,12 +221,13 @@ namespace HtF.Guardian
                 return;
             }
 
-            float[] cols = { 0f, 250f, 330f, 430f, 570f };
-            GUI.Label(new Rect(body.x + cols[0], body.y, 240f, 18f), L.ColPlayer, _s.Head);
-            GUI.Label(new Rect(body.x + cols[1], body.y, 70f, 18f), L.ColViolations, _s.Head);
-            GUI.Label(new Rect(body.x + cols[2], body.y, 90f, 18f), L.ColSteamId, _s.Head);
-            GUI.Label(new Rect(body.x + cols[3], body.y, 130f, 18f), L.ColLast, _s.Head);
-            GUI.Label(new Rect(body.x + cols[4], body.y, 150f, 18f), L.ColAction, _s.Head);
+            float[] cols = { 0f, 216f, 280f, 348f, 448f, 570f };
+            GUI.Label(new Rect(body.x + cols[0], body.y, 210f, 18f), L.ColPlayer, _s.Head);
+            GUI.Label(new Rect(body.x + cols[1], body.y, 60f, 18f), L.ColViolations, _s.Head);
+            GUI.Label(new Rect(body.x + cols[2], body.y, 64f, 18f), L.ColRateDrops, _s.Head);
+            GUI.Label(new Rect(body.x + cols[3], body.y, 96f, 18f), L.ColSteamId, _s.Head);
+            GUI.Label(new Rect(body.x + cols[4], body.y, 118f, 18f), L.ColLast, _s.Head);
+            GUI.Label(new Rect(body.x + cols[5], body.y, 150f, 18f), L.ColAction, _s.Head);
 
             Rect view = new Rect(body.x, body.y + 22f, body.width, body.height - 22f);
             Rect content = new Rect(0f, 0f, view.width - 18f, Rows.Count * Row);
@@ -236,23 +239,26 @@ namespace HtF.Guardian
                 float ry = i * Row;
                 if (i % 2 == 1) GUI.Box(new Rect(0f, ry, content.width, Row), GUIContent.none, _s.Stripe);
 
-                GUI.Label(new Rect(cols[0], ry + 4f, 240f, 18f),
+                GUI.Label(new Rect(cols[0], ry + 4f, 210f, 18f),
                     r.Name + (r.IsHost ? " " + L.Host : ""), _s.Text);
 
-                GUI.Label(new Rect(cols[1], ry + 4f, 70f, 18f), r.Count.ToString(),
+                GUI.Label(new Rect(cols[1], ry + 4f, 60f, 18f), r.Count.ToString(),
                     r.Count == 0 ? _s.Dim : (r.Count >= Threshold() ? _s.Bad : _s.Warn));
 
-                GUI.Label(new Rect(cols[2], ry + 4f, 100f, 18f),
+                // 速率丟包永遠是灰的：它不累積到處置門檻，看到大數字也不代表有問題。
+                GUI.Label(new Rect(cols[2], ry + 4f, 64f, 18f), r.RateDrops.ToString(), _s.Dim);
+
+                GUI.Label(new Rect(cols[3], ry + 4f, 96f, 18f),
                     r.Steam == 0UL ? "—" : r.Steam.ToString(), _s.Dim);
 
-                GUI.Label(new Rect(cols[3], ry + 4f, 135f, 18f), r.Last, _s.Dim);
+                GUI.Label(new Rect(cols[4], ry + 4f, 118f, 18f), r.Last, _s.Dim);
 
                 if (r.IsHost) continue;
 
-                if (Confirm(new Rect(cols[4], ry + 3f, 66f, 20f), "kick" + r.ClientId, L.Kick))
+                if (Confirm(new Rect(cols[5], ry + 3f, 66f, 20f), "kick" + r.ClientId, L.Kick))
                     G.Kick(r.Conn, r.Name, false);
 
-                if (Confirm(new Rect(cols[4] + 72f, ry + 3f, 66f, 20f), "ban" + r.ClientId, L.Ban))
+                if (Confirm(new Rect(cols[5] + 72f, ry + 3f, 66f, 20f), "ban" + r.ClientId, L.Ban))
                 {
                     Bans.Add(r.Steam, r.Name);
                     G.Kick(r.Conn, r.Name, true);
