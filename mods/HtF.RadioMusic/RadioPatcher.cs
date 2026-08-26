@@ -32,6 +32,10 @@ namespace HtF.RadioMusic
             // 而且新頻道要先存在才輪得到它拿 clip。
             Stations.Rebuild(__instance, Channels(__instance), MusicLibrary.ChannelsNeeded());
             ApplyClips(__instance);
+            // 遊戲自己的 ApplyVolume 在 OnStartClient 裡**比我們早**跑完，那時新頻道
+            // 還不存在。不補這一次，收音機一開始就停在新頻率上的話會是完全安靜的——
+            // 要等玩家轉開再轉回來才會出聲。
+            Refresh(__instance);
         }
 
         internal static void SetChannels(Radio radio, RadioChannel[] channels)
@@ -64,6 +68,7 @@ namespace HtF.RadioMusic
             {
                 Stations.Rebuild(Live[i], Channels(Live[i]), MusicLibrary.ChannelsNeeded());
                 ApplyClips(Live[i]);
+                Refresh(Live[i]);   // 同上：新加出來的頻道要靠這一次才會開始播
             }
         }
 
@@ -106,15 +111,22 @@ namespace HtF.RadioMusic
         /// <summary>對場上每一台收音機重新套用一次遊戲自己的音量計算。</summary>
         private static void RefreshAll()
         {
+            Live.RemoveAll(r => !r);
+            for (int i = 0; i < Live.Count; i++) Refresh(Live[i]);
+        }
+
+        /// <summary>
+        /// 呼叫遊戲自己的 <c>ApplyVolume</c>，讓每個頻道的音量、靜音狀態與指針位置
+        /// 一次對齊到目前的頻率。頻道被我們改動過之後一定要補這一次。
+        /// </summary>
+        private static void Refresh(Radio radio)
+        {
+            if (!radio) return;
             if (_mApplyVolume == null) _mApplyVolume = AccessTools.Method(typeof(Radio), ApplyVolumeName);
             if (_mApplyVolume == null) return;
 
-            Live.RemoveAll(r => !r);
-            for (int i = 0; i < Live.Count; i++)
-            {
-                try { _mApplyVolume.Invoke(Live[i], null); }
-                catch (Exception e) { Plugin.Log.LogWarning("Boss 結束後重算收音機音量失敗：" + e.Message); }
-            }
+            try { _mApplyVolume.Invoke(radio, null); }
+            catch (Exception e) { Plugin.Log.LogWarning("重算收音機音量失敗：" + e.Message); }
         }
 
         /// <summary>
@@ -202,10 +214,17 @@ namespace HtF.RadioMusic
 
                 float d = Mathf.Abs(freq - ch.Frequency) / k - 0.5f;
                 d = Mathf.Clamp01(1f - d);
-                float vol = d * radioVol * Plugin.MusicVolume.Value;
 
-                if (ch.IsMuted && vol > 0.05f) ch.ToggleMute(false, tickTime);
-                else if (!ch.IsMuted && vol < 0.05f) ch.ToggleMute(true, 0f);
+                // **門檻要跟遊戲比同一個東西。** 遊戲的 0.05 是拿去和 `d * _radioVol`
+                // 比的，也就是「調得夠不夠準」，和使用者的音量偏好無關。
+                // 這裡若拿乘完倍率的最終音量去比，音樂音量調到 0.17 以下時
+                // （滿格 `1 × 0.3 × 0.17 ≈ 0.05`）就會恆小於門檻——每次計算都把頻道
+                // 靜音並 `Stop()`，收音機從此完全不出聲，而且轉台也救不回來。
+                float tuned = d * radioVol;
+                float vol = tuned * Plugin.MusicVolume.Value;
+
+                if (ch.IsMuted && tuned > 0.05f) ch.ToggleMute(false, tickTime);
+                else if (!ch.IsMuted && tuned < 0.05f) ch.ToggleMute(true, 0f);
 
                 ch.SetVol(vol);
                 if (d > best) best = d;
