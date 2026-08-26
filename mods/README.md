@@ -279,6 +279,31 @@ d = Mathf.Clamp01(1f - d);
 `Boss 出現時繼續播放` 打開後會把音量重新算一遍讓音樂繼續——
 這是唯一需要重算原本那段邏輯的地方，其餘都只是在原結果上乘倍率。
 
+### Boss 被打死之後收音機不會再響（遊戲的 bug，已修）
+
+`Radio` 把 `ApplyVolume` 掛在 `OnGlobalBossDeath` 和 `OnGlobalBossDespawn` 上
+（`Radio.cs:240-242`），而 `ApplyVolume` 開頭是
+`if (BossManager.Boss) { 全部靜音; return; }`。問題是**兩條收尾路徑的順序不一樣**：
+
+```csharp
+// BossManager.OnBossDeath（BossManager.cs:239-252）
+onGlobalBossDeath();          // ← 事件先發
+...
+BossManager.Boss = null;      // ← Boss 之後才清掉
+
+// BossManager.OnBossDespawn（BossManager.cs:300-301）
+BossManager.Boss = null;      // ← 這條是先清
+onGlobalBossDespawn();
+```
+
+所以 **Boss 被打死**時 `ApplyVolume` 看到 `Boss` 還在，又靜音一次就 return，
+而之後沒有任何東西會再呼叫它——收音機就永遠不會再響。
+**Boss 自己消失**那條反而正常，因為它先清了 `Boss`。
+
+修法是掛 `BossManager.OnBossDeath` 的 postfix：方法回傳時 `Boss` 已經是 null，
+這時候再呼叫一次**遊戲自己的** `ApplyVolume` 就好。刻意不自己重算——
+那正是 despawn 路徑做的事，走同一條路行為才會完全一致。
+
 重算時**頻率來源要照抄遊戲那一行判斷**：
 
 ```csharp
