@@ -256,6 +256,12 @@ namespace HtF.RadioMusic
             for (int c = 0; c < 16; c++) if (!Cursor.ContainsKey(c)) Cursor[c] = 1;
         }
 
+        private static bool HasExplicit(int channelIndex)
+        {
+            List<AudioClip> list;
+            return ByChannel.TryGetValue(channelIndex, out list) && list.Count > 0;
+        }
+
         internal static List<AudioClip> TracksFor(int channelIndex, int totalChannels)
         {
             List<AudioClip> explicitList;
@@ -264,10 +270,45 @@ namespace HtF.RadioMusic
 
             if (Shared.Count == 0 || totalChannels <= 0) return null;
 
-            // 共用曲目輪流分給沒有指定資料夾的頻道
+            // 共用曲目輪流分給**沒有指定資料夾的頻道**，而且要用「在這些頻道裡排第幾個」
+            // 來取，不能用絕對的頻道編號。
+            //
+            // 原本是 `for (i = channelIndex; i < Shared.Count; i += totalChannels)`，
+            // 那在有指定資料夾時會漏歌：例如子資料夾 `1\` 佔掉頻道 0、另外有 20 首共用曲，
+            // 那 Shared[0] 永遠不會被任何頻道取到——頻道 0 走的是指定清單那條路，
+            // 而其他頻道的起始索引都大於 0。
+            int rank = 0;
+            for (int c = 0; c < channelIndex; c++) if (!HasExplicit(c)) rank++;
+
+            int free = 0;
+            for (int c = 0; c < totalChannels; c++) if (!HasExplicit(c)) free++;
+            if (free <= 0) return null;
+
             var mine = new List<AudioClip>();
-            for (int i = channelIndex; i < Shared.Count; i += totalChannels) mine.Add(Shared[i]);
+            for (int i = rank; i < Shared.Count; i += free) mine.Add(Shared[i]);
             return mine.Count > 0 ? mine : null;
+        }
+
+        /// <summary>
+        /// 「一首歌一個頻率」需要幾個頻道。
+        ///
+        /// 不能直接用 <see cref="TotalClips"/>：指定了子資料夾的頻道是使用者自己分好的一組，
+        /// 不拆開，一組只佔一個頻道。用總曲目數去建，尾巴那幾個頻道會分不到任何共用曲目，
+        /// 只能留著複製來的那首——同一首歌會出現在好幾個頻率上。
+        /// </summary>
+        internal static int ChannelsNeeded()
+        {
+            int highestExplicit = -1;
+            foreach (KeyValuePair<int, List<AudioClip>> kv in ByChannel)
+                if (kv.Value.Count > 0 && kv.Key > highestExplicit) highestExplicit = kv.Key;
+
+            int needed = 0, free = 0;
+            while (free < Shared.Count)
+            {
+                if (!HasExplicit(needed)) free++;
+                needed++;
+            }
+            return Mathf.Max(needed, highestExplicit + 1);
         }
     }
 }

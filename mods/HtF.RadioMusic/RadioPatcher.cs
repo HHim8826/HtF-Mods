@@ -28,7 +28,43 @@ namespace HtF.RadioMusic
         private static void Radio_OnStartClient_Postfix(Radio __instance)
         {
             if (!Live.Contains(__instance)) Live.Add(__instance);
+            // 順序不能反：頻道數決定曲目怎麼分配（TracksFor 吃 totalChannels），
+            // 而且新頻道要先存在才輪得到它拿 clip。
+            Stations.Rebuild(__instance, Channels(__instance), MusicLibrary.ChannelsNeeded());
             ApplyClips(__instance);
+        }
+
+        internal static void SetChannels(Radio radio, RadioChannel[] channels)
+        {
+            Resolve();
+            if (_fChannels == null || !radio || channels == null) return;
+            _fChannels.SetValue(radio, channels);
+        }
+
+        internal static void SetSource(RadioChannel channel, AudioSource source)
+        {
+            Resolve();
+            if (_fChannelSource == null || channel == null) return;
+            _fChannelSource.SetValue(channel, source);
+        }
+
+        internal static Vector2 FreqRange(Radio radio)
+        {
+            Resolve();
+            if (_fFreqMinMax == null || !radio) return new Vector2(88f, 108f);
+            return (Vector2)_fFreqMinMax.GetValue(radio);
+        }
+
+        /// <summary>設定改了就重建頻道並重新套曲目。</summary>
+        internal static void RebuildAll()
+        {
+            Live.RemoveAll(r => !r);
+            Stations.PruneDead();
+            for (int i = 0; i < Live.Count; i++)
+            {
+                Stations.Rebuild(Live[i], Channels(Live[i]), MusicLibrary.ChannelsNeeded());
+                ApplyClips(Live[i]);
+            }
         }
 
         /// <summary>
@@ -104,6 +140,14 @@ namespace HtF.RadioMusic
                     return;
                 }
 
+                // 寬度被改過就得整條重算——遊戲算出來的是它自己那條 ±0.5/±1.5 的曲線，
+                // 在原結果上乘倍率救不回來。Boss 靜音期間不重算（那時本來就該安靜）。
+                if (!bossSilenced && Stations.HasCustomWidth())
+                {
+                    Recompute(__instance);
+                    return;
+                }
+
                 var noise = _fNoise.GetValue(__instance) as AudioSource;
                 if (noise) noise.volume *= Plugin.NoiseVolume.Value;
 
@@ -146,13 +190,17 @@ namespace HtF.RadioMusic
             try { tickTime = (float)radio.TimeManager.TicksToTime(TickType.Tick); }
             catch (Exception) { }
 
+            // 頻道寬度倍率：1 = 遊戲原本的 ±0.5 滿音量 / ±1.5 歸零。
+            // 收窄之後乾淨間距是 3k，台數再多也分得開（見 Stations.WidthFactor）。
+            float k = Mathf.Max(0.01f, Stations.WidthFactor());
+
             float best = 0f;
             for (int i = 0; i < channels.Length; i++)
             {
                 RadioChannel ch = channels[i];
                 if (ch == null) continue;
 
-                float d = Mathf.Abs(freq - ch.Frequency) - 0.5f;
+                float d = Mathf.Abs(freq - ch.Frequency) / k - 0.5f;
                 d = Mathf.Clamp01(1f - d);
                 float vol = d * radioVol * Plugin.MusicVolume.Value;
 
@@ -336,12 +384,14 @@ namespace HtF.RadioMusic
         /// 一個頻道只推一次：場上有兩台收音機時，它們共用同一份節目表，
         /// 逐台推會變成一次跳好幾首。
         /// </summary>
-        internal static void SkipCurrent()
+        /// <summary>回傳 false = 每個頻道都只有一首歌，根本沒有「下一首」可跳。</summary>
+        internal static bool SkipCurrent()
         {
-            if (!MusicLibrary.Ready || MusicLibrary.TotalClips == 0) return;
+            if (!MusicLibrary.Ready || MusicLibrary.TotalClips == 0) return false;
 
             Live.RemoveAll(r => !r);
             var bumped = new HashSet<int>();
+            bool anyMultiTrack = false;
 
             for (int r = 0; r < Live.Count; r++)
             {
@@ -352,6 +402,10 @@ namespace HtF.RadioMusic
                 {
                     if (!bumped.Add(i)) continue;
 
+                    var tracks = MusicLibrary.TracksFor(i, channels.Length);
+                    if (tracks == null || tracks.Count < 2) continue;   // 只有一首，跳了也是同一首
+                    anyMultiTrack = true;
+
                     AudioClip clip;
                     float offset;
                     if (!Sync.Target(i, channels.Length, Sync.Clock(i), out clip, out offset)) continue;
@@ -360,6 +414,7 @@ namespace HtF.RadioMusic
             }
 
             TickPlaylist();   // 立刻反映，不用等下一幀
+            return anyMultiTrack;
         }
 
         // ------------------------------------------------------------------ 反射
@@ -372,7 +427,7 @@ namespace HtF.RadioMusic
             catch (Exception) { return null; }
         }
 
-        private static AudioSource SourceOf(RadioChannel channel)
+        internal static AudioSource SourceOf(RadioChannel channel)
         {
             Resolve();
             if (_fChannelSource == null || channel == null) return null;
