@@ -226,25 +226,24 @@ namespace HtF.RadioMusic
             RadioChannel[] channels = Channels(radio);
             if (channels == null) return;
 
-            double now = Sync.Now();
-            bool synced = Plugin.SyncPlayback.Value;
+            bool auto = Plugin.AutoAdvance.Value;
 
             for (int i = 0; i < channels.Length; i++)
             {
                 AudioClip clip;
                 float offset;
 
-                if (synced && Sync.Target(i, channels.Length, now, out clip, out offset))
+                if (auto && Sync.Target(i, channels.Length, Sync.Clock(i), out clip, out offset))
                 {
-                    // 同步模式：曲目和位置都由網路時間決定
+                    // 節目表模式：曲目和位置都由時鐘決定（見 Sync）
                 }
                 else
                 {
                     clip = MusicLibrary.ClipFor(i, channels.Length);
-                    // 非同步模式也定位到 clip 內的共同位置，而不是從 0 開始——
+                    // 手動模式也定位到 clip 內的共同位置，而不是從 0 開始——
                     // 那正是遊戲自己解除靜音時做的事（ToggleMute 的
                     // `time % clip.length`），跟著它走，單曲頻道就自然是同步的。
-                    offset = PositionIn(clip, now);
+                    offset = PositionIn(clip, Sync.Now());
                 }
                 if (!clip) continue; // 沒有對應曲目就保留原曲
 
@@ -270,7 +269,7 @@ namespace HtF.RadioMusic
             return Mathf.Clamp((float)(now % clip.length), 0f, clip.length - 0.01f);
         }
 
-        // ------------------------------------------------------------------ 同步播放
+        // ------------------------------------------------------------------ 節目表
 
         /// <summary>
         /// 位置容差（秒）。超過才校正——每幀硬寫 <c>AudioSource.time</c> 會有卡頓聲，
@@ -279,22 +278,20 @@ namespace HtF.RadioMusic
         private const float DriftTolerance = 1.0f;
 
         /// <summary>
-        /// 每幀把各頻道拉回共同的時間軸。只在「同步播放」開著時做事。
+        /// 每幀把各頻道拉回節目表。只在「自動接下一首」開著時做事。
         ///
-        /// 需要每幀跑是因為**換曲**：一首放完要接下一首，而 `ApplyVolume`
-        /// 只在轉台和 Boss 事件時才被呼叫，接不了。
+        /// **需要每幀跑的唯一理由是換曲**：一首放完要接下一首，而 `ApplyVolume`
+        /// 只在轉台和 Boss 事件時才被呼叫，接不了——這正是「多出來的歌被藏在
+        /// 下一首熱鍵後面」的成因。
         ///
         /// 順帶收掉一個小瑕疵：玩家轉到某台時，遊戲的 `ToggleMute` 會用
-        /// `網路時間 % clip.length` 定位，那跟我們的節目表偏移不一樣。
+        /// `時間 % clip.length` 定位，那跟節目表的偏移不一樣。
         /// 這裡在同一幀就把它校正回來，所以聽不出來。
         /// </summary>
-        internal static void TickSync()
+        internal static void TickPlaylist()
         {
-            if (Plugin.SyncPlayback == null || !Plugin.SyncPlayback.Value) return;
+            if (Plugin.AutoAdvance == null || !Plugin.AutoAdvance.Value) return;
             if (!MusicLibrary.Ready || MusicLibrary.TotalClips == 0) return;
-
-            double now = Sync.Now();
-            if (now < 0.0) return;
 
             Live.RemoveAll(r => !r);
             for (int r = 0; r < Live.Count; r++)
@@ -306,7 +303,7 @@ namespace HtF.RadioMusic
                 {
                     AudioClip clip;
                     float offset;
-                    if (!Sync.Target(i, channels.Length, now, out clip, out offset)) continue;
+                    if (!Sync.Target(i, channels.Length, Sync.Clock(i), out clip, out offset)) continue;
 
                     AudioSource src = SourceOf(channels[i]);
                     if (!src) continue;
@@ -325,9 +322,44 @@ namespace HtF.RadioMusic
                             src.time = offset;
                         }
                     }
-                    catch (Exception e) { Plugin.Log.LogWarning("同步播放位置失敗：" + e.Message); }
+                    catch (Exception e) { Plugin.Log.LogWarning("套用節目表位置失敗：" + e.Message); }
                 }
             }
+        }
+
+        /// <summary>
+        /// 「下一首」在節目表模式下的意思：把每個頻道的節目表推到下一首的開頭。
+        ///
+        /// 推的是**本機的時鐘偏移**，所以只有自己會跳——同步播放開著時
+        /// `Sync.Clock` 根本不讀那個偏移（跳過會脫隊），呼叫端會先擋掉。
+        ///
+        /// 一個頻道只推一次：場上有兩台收音機時，它們共用同一份節目表，
+        /// 逐台推會變成一次跳好幾首。
+        /// </summary>
+        internal static void SkipCurrent()
+        {
+            if (!MusicLibrary.Ready || MusicLibrary.TotalClips == 0) return;
+
+            Live.RemoveAll(r => !r);
+            var bumped = new HashSet<int>();
+
+            for (int r = 0; r < Live.Count; r++)
+            {
+                RadioChannel[] channels = Channels(Live[r]);
+                if (channels == null) continue;
+
+                for (int i = 0; i < channels.Length; i++)
+                {
+                    if (!bumped.Add(i)) continue;
+
+                    AudioClip clip;
+                    float offset;
+                    if (!Sync.Target(i, channels.Length, Sync.Clock(i), out clip, out offset)) continue;
+                    Sync.Skip(i, clip.length - offset);
+                }
+            }
+
+            TickPlaylist();   // 立刻反映，不用等下一幀
         }
 
         // ------------------------------------------------------------------ 反射

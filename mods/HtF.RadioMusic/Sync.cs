@@ -33,9 +33,14 @@ namespace HtF.RadioMusic
     ///    直接掉出共同的時間軸。
     ///
     /// 做法是把一個頻道的曲目串成一條連續的時間軸（就像真的電台節目表）：
-    /// 總長 = 各首長度相加，`網路時間 % 總長` 落在哪一首的哪一秒，就播那裡。
+    /// 總長 = 各首長度相加，`時鐘 % 總長` 落在哪一首的哪一秒，就播那裡。
     /// 這是純函數——同樣的檔案、同樣的時鐘，每台機器算出來必然一樣，
     /// **不需要新增任何同步狀態**（Harmony 本來也補不上 SyncVar 或 ServerRpc）。
+    ///
+    /// **「自動接下一首」和「同步播放」是兩件事，只差在時鐘。**
+    /// 節目表本身（自動接歌）用本機時鐘就成立，一個人玩也會自己接下去；
+    /// 打開同步播放只是把時鐘換成網路時間，讓所有人的節目表對齊。
+    /// 所以自動接歌預設開著，同步播放預設關著——後者有「大家檔案要一樣」的前提。
     /// </summary>
     internal static class Sync
     {
@@ -63,16 +68,55 @@ namespace HtF.RadioMusic
         /// <summary>長度小於這個值的 clip 當成無效，避免除以零和無限迴圈。</summary>
         private const float MinLength = 0.05f;
 
+        /// <summary>各頻道被「下一首」推掉的秒數。同步模式不讀它（跳過會脫隊）。</summary>
+        private static readonly Dictionary<int, double> Skips = new Dictionary<int, double>();
+
+        /// <summary>
+        /// 節目表用的時鐘。
+        ///
+        /// 同步播放開著且連著線時是**網路時間**（大家一致）；否則是本機時鐘
+        /// 加上這個頻道被跳過的秒數。
+        ///
+        /// 同步播放開著但拿不到網路時間（主選單、還沒連線）時**退回本機時鐘**
+        /// ——那種情況本來就沒有人要同步，繼續自動接歌才是對的；真的連上線之後
+        /// 下一幀就會切回網路時間。
+        /// </summary>
+        internal static double Clock(int channelIndex)
+        {
+            if (Plugin.SyncPlayback != null && Plugin.SyncPlayback.Value)
+            {
+                double n = Now();
+                if (n >= 0.0) return n;
+            }
+
+            double skip;
+            Skips.TryGetValue(channelIndex, out skip);
+            return Time.realtimeSinceStartup + skip;
+        }
+
+        /// <summary>把這個頻道的節目表往前推，讓它跳到下一首的開頭。</summary>
+        internal static void Skip(int channelIndex, float remaining)
+        {
+            if (remaining <= 0f) return;
+            double cur;
+            Skips.TryGetValue(channelIndex, out cur);
+            // 多推 0.05 秒，免得浮點誤差讓它停在同一首的最後一瞬間。
+            Skips[channelIndex] = cur + remaining + 0.05;
+        }
+
+        /// <summary>重新載入音樂時清掉——曲目換了，舊的偏移沒有意義。</summary>
+        internal static void ClearSkips() { Skips.Clear(); }
+
         /// <summary>
         /// 這個頻道**現在**該播哪一首的第幾秒。
         /// 回傳 false = 沒有可用曲目（呼叫端就保留原本的曲子）。
         /// </summary>
-        internal static bool Target(int channelIndex, int totalChannels, double now,
+        internal static bool Target(int channelIndex, int totalChannels, double clock,
                                    out AudioClip clip, out float offset)
         {
             clip = null;
             offset = 0f;
-            if (now < 0.0) return false;
+            if (clock < 0.0) return false;
 
             List<AudioClip> list = MusicLibrary.TracksFor(channelIndex, totalChannels);
             if (list == null || list.Count == 0) return false;
@@ -82,7 +126,7 @@ namespace HtF.RadioMusic
                 if (list[i] && list[i].length >= MinLength) total += list[i].length;
             if (total < MinLength) return false;
 
-            double t = now % total;
+            double t = clock % total;
             if (t < 0.0) t += total;   // 理論上 now 不會是負的，但別讓它變成負的偏移
 
             for (int i = 0; i < list.Count; i++)
