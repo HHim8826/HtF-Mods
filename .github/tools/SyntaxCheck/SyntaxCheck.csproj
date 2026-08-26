@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    只做「語法解析」的小工具。CI 上沒有遊戲的 Managed 組件（那是別人的程式碼，
+    不進版控），所以無法做完整編譯——但語法錯誤、括號沒收、檔案編碼壞掉這類問題
+    不需要任何參照就查得出來，用 Roslyn 把每個 .cs 剖析一次就好。
+
+    這個專案本身是 net8.0 的一般主控台程式，和 mods/ 那些 netstandard2.1 的
+    外掛完全無關，不會互相影響（它不在 mods/ 底下，也沒有共用的 Directory.Build.props）。
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>SyntaxCheck</AssemblyName>
+    <RootNamespace>SyntaxCheck</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
+  </ItemGroup>
+
+</Project>

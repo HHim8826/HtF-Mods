@@ -43,6 +43,26 @@ dotnet build mods/HtF.HudNumbers/HtF.HudNumbers.csproj \
 
 建置後會自動部署到 r2modman 的 profile。預設路徑寫在 `mods/Common.props`。
 
+## 持續整合
+
+`.github/workflows/ci.yml`，推上 `main` 和開 PR 時跑：
+
+| Job | 要遊戲組件嗎 | 做什麼 |
+|---|---|---|
+| `checks` | 不要 | Roslyn 把 `mods/**/*.cs` 逐檔剖析（語法、編碼）、BepInPlugin 的 GUID 有沒有撞號、兩份 README 的表格和實際的專案對不對得上 |
+| `build` | 要 | 以 Release 建置八個 mod，DLL 收成 artifact |
+
+**`build` 預設是跳過的。** 完整編譯得對著遊戲的 `Managed/*.dll`，而那份東西不進版控
+（理由見下面「不在這個 repo 裡的東西」），公開 repo 的 CI 也沒有別的地方拿得到它。
+要打開它：
+
+1. 開一個**私有** repo，根目錄放 `Managed/` 和 `BepInEx/core/`——就是你本機那兩個資料夾。
+2. 在這個 repo 設 repository variable `GAME_LIBS_REPO` = `<owner>/<那個私有 repo>`。
+3. 再設 repository secret `GAME_LIBS_TOKEN` = 讀得到它的 fine-grained PAT。
+
+沒設定時 `build` 只留一則 notice 就跳過，不會把 PR 弄紅，`checks` 照跑。
+從別人的 fork 送 PR 時拿不到 secret，行為一樣是跳過。
+
 ## 文件
 
 - `mods/README.md` — 八個 mod 的設計說明、中英雙語架構、踩過的坑
