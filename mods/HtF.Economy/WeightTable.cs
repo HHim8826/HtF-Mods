@@ -5,7 +5,7 @@ using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 
-namespace HtF.FishingEcology
+namespace HtF.Economy
 {
     /// <summary>
     /// 產生調整過的權重表。

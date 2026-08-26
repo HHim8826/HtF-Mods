@@ -1,12 +1,12 @@
 using System.Collections.Generic;
 using HarmonyLib;
 
-namespace HtF.FishingEcology
+namespace HtF.Economy
 {
     // 類別上這個空的 [HarmonyPatch] 是必要的：PatchClassProcessor 若在型別上
     // 找不到任何 Harmony 標註就直接略過整個類別，方法上的標註不會被掃到。
     [HarmonyPatch]
-    internal static class Patches
+    internal static class FishingPatches
     {
         /// <summary>
         /// 抽魚前把權重表換成調整過的副本。

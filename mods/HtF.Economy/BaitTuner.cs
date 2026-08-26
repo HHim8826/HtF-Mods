@@ -4,7 +4,7 @@ using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 
-namespace HtF.FishingEcology
+namespace HtF.Economy
 {
     /// <summary>
     /// 咬鉤時間。

@@ -1,11 +1,11 @@
-# HtF-Mods — How to Fish 的九個 BepInEx mod
+# HtF-Mods — How to Fish 的八個 BepInEx mod
 
-九個各自獨立的 mod：HUD 數值化、剩餘子彈、反外掛驗證層、房主規則、經濟、釣魚生態、
-收音機自訂音樂、遊戲內設定頁面，以及一個指令工具視窗。
+八個各自獨立的 mod：HUD 數值化、剩餘子彈、反外掛驗證層、房主規則、
+經濟與釣魚生態、收音機自訂音樂、遊戲內設定頁面，以及一個指令工具視窗。
 **介面中英雙語**，跟著遊戲語系自動切換。
 
-Nine standalone BepInEx mods for *How to Fish*: HUD numbers, an ammo counter, a
-host-side anti-cheat layer, host rules, economy, fishing ecology, custom radio music,
+Eight standalone BepInEx mods for *How to Fish*: HUD numbers, an ammo counter, a
+host-side anti-cheat layer, host rules, economy and fishing ecology, custom radio music,
 an in-game settings page, and a command tool window.
 **The UI is bilingual (繁體中文 / English)** and follows the game's own
 language setting automatically.
@@ -46,7 +46,7 @@ dotnet build mods/HtF.HudNumbers/HtF.HudNumbers.csproj \
 
 ## 文件
 
-- `mods/README.md` — 九個 mod 的設計說明、中英雙語架構、踩過的坑
+- `mods/README.md` — 八個 mod 的設計說明、中英雙語架構、踩過的坑
 - `mods/HtF.Guardian/README.md` — 反外掛驗證層：問題、做法、擋不住的東西
 - `mods/HtF.DazedTools/README.md` — 指令工具視窗
 
