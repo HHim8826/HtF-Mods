@@ -58,6 +58,9 @@ namespace HtF.RadioMusic
         private static readonly Dictionary<Radio, List<AudioSource>> Created =
             new Dictionary<Radio, List<AudioSource>>();
 
+        /// <summary>每台收音機**還沒被我們動過**時有幾個頻道。見 <see cref="BaseCount"/>。</summary>
+        private static readonly Dictionary<Radio, int> Vanilla = new Dictionary<Radio, int>();
+
         // ------------------------------------------------------------------ 對外
 
         /// <summary>
@@ -69,7 +72,7 @@ namespace HtF.RadioMusic
             Resolve();
             if (_fFrequency == null) return;
 
-            int want = Desired(current.Length, wantedStations);
+            int want = Desired(BaseCount(radio, current), wantedStations);
             if (want <= 0) return;                 // −1 = 不改，或自動模式還沒有曲目
 
             Vector2 band = Band(radio);
@@ -95,11 +98,17 @@ namespace HtF.RadioMusic
         /// </summary>
         internal static void PruneDead()
         {
+            Forget(Created);
+            Forget(Vanilla);
+        }
+
+        private static void Forget<T>(Dictionary<Radio, T> map)
+        {
             List<Radio> dead = null;
-            foreach (var kv in Created)
+            foreach (var kv in map)
                 if (!kv.Key) (dead ?? (dead = new List<Radio>())).Add(kv.Key);
             if (dead == null) return;
-            for (int i = 0; i < dead.Count; i++) Created.Remove(dead[i]);
+            for (int i = 0; i < dead.Count; i++) map.Remove(dead[i]);
         }
 
         // ------------------------------------------------------------------ 數量
@@ -121,6 +130,32 @@ namespace HtF.RadioMusic
             // 不是靠少建幾台解決的，是靠把衰減曲線收窄（見 WidthFactor）。
             // 這裡只留一個理智上限。
             return Mathf.Clamp(wantedStations, vanilla, MaxAuto);
+        }
+
+        /// <summary>
+        /// 這台收音機**原本**有幾個頻道。<see cref="Desired"/> 的下限只能用這個值。
+        ///
+        /// **不能用 `current.Length`。** 那是「現在」的長度，我們自己加過頻道之後它就變大了：
+        /// 第一次擴到 25 台以後，想縮回 10 台時 `Clamp(10, 25, 30)` 會夾成 25——
+        /// 頻道數從此只增不減，刪掉音樂檔、把設定調小、按 F8 重載都縮不回去，
+        /// 多出來的頻道就一直掛著重複或無效的曲目。
+        ///
+        /// 所以第一次看到這台收音機時（`OnStartClient` 的 postfix，那時還沒動過它）
+        /// 就把長度記下來，之後一律用那個值當下限——我們自己生的頻道砍得掉，
+        /// 遊戲原本序列化在 prefab 上的那幾個一個都不動。
+        /// </summary>
+        private static int BaseCount(Radio radio, RadioChannel[] current)
+        {
+            int n;
+            if (Vanilla.TryGetValue(radio, out n)) return n;
+
+            // 保險：萬一第一次進來時我們已經加過頻道（理論上不會），扣掉自己生的那些。
+            List<AudioSource> mine;
+            int added = Created.TryGetValue(radio, out mine) && mine != null ? mine.Count : 0;
+            n = Mathf.Max(1, current.Length - added);
+
+            Vanilla[radio] = n;
+            return n;
         }
 
         /// <summary>
@@ -183,6 +218,18 @@ namespace HtF.RadioMusic
 
                 var channel = new RadioChannel();
                 RadioPatcher.SetSource(channel, clone);
+
+                // **一定要先把它設成靜音。** `new RadioChannel()` 的 `IsMuted` 預設是
+                // false，但 clone 出來的 AudioSource 是停著的——狀態對不上，
+                // `ApplyVolume` 的兩條分支（「靜音了但該響」／「沒靜音但該閉嘴」）
+                // 就都不成立，`ToggleMute(false, t)` 永遠不會被呼叫，這台也就永遠
+                // 不會 `Play()`。玩家轉到這個頻率只會聽到一片安靜，
+                // 得先轉開再轉回來（觸發一次靜音）才會出聲。
+                // `ToggleMute(true, 0f)` 同時設好 `IsMuted` 與內部的 `_initialized`，
+                // 從此狀態和實際播放與否是一致的。
+                try { channel.ToggleMute(true, 0f); }
+                catch (Exception e) { Plugin.Log.LogWarning("新頻道初始靜音失敗：" + e.Message); }
+
                 list.Add(channel);
                 mine.Add(clone);
             }
