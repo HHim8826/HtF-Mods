@@ -3,6 +3,7 @@
     <AssemblyName>HtF.HudNumbers</AssemblyName>
     <RootNamespace>HtF.HudNumbers</RootNamespace>
     <Version>1.0.0</Version>
+    <PluginName>HtF HUD Numbers</PluginName>
   </PropertyGroup>
   <Import Project="..\Common.props" />
 </Project>

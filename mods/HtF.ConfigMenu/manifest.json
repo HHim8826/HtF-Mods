@@ -1,0 +1,9 @@
+{
+  "name": "HtF_ConfigMenu",
+  "version_number": "1.0.0",
+  "website_url": "https://github.com/HHim8826/HtF-Mods",
+  "description": "In-game settings page for every loaded BepInEx plugin, with a button added to the pause and main menus. Works with any mod, not just these. English / 繁體中文.",
+  "dependencies": [
+    "BepInEx-BepInExPack-5.4.2305"
+  ]
+}

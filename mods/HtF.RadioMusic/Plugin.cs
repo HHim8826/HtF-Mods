@@ -20,7 +20,7 @@ namespace HtF.RadioMusic
     ///     _noiseSource.volume = (1f - 最接近頻道的準度) * 0.075f;
     /// 在模擬 FM 空頻雜訊：調準了是 0，偏掉才變大。
     /// </summary>
-    [BepInPlugin(Guid, "HtF Radio Music", "1.0.0")]
+    [BepInPlugin(Guid, ModInfo.Name, ModInfo.Version)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "htf.radiomusic";

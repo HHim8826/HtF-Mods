@@ -1,0 +1,9 @@
+{
+  "name": "HtF_Economy",
+  "version_number": "1.1.0",
+  "website_url": "https://github.com/HHim8826/HtF-Mods",
+  "description": "Economy and fishing ecology: sell price and cost multipliers, starting money for new saves, catch weights, per-item multipliers, pity rolls and bite time. Host side. English / 繁體中文.",
+  "dependencies": [
+    "BepInEx-BepInExPack-5.4.2305"
+  ]
+}

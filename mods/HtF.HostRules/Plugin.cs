@@ -12,13 +12,13 @@ namespace HtF.HostRules
     /// 房主規則擴充。
     ///
     /// 只有房主需要裝——所有生效點都在伺服器端（傷害結算、飽食／回血 tick）。
-    /// 遊戲 1.0.10 加進來的難度系統把 HealthMultiplier / DamageMultiplier 做成
-    /// ServerSettings 上的靜態屬性，這個 mod 就接在那裡，等於把三段式難度換成無段式。
+    /// 遊戲在 1.0.7 到 1.0.9 之間加進來的難度系統，把 HealthMultiplier / DamageMultiplier
+    /// 做成 ServerSettings 上的靜態屬性，這個 mod 就接在那裡，等於把三段式難度換成無段式。
     ///
     /// 做不到的事：新增 SyncVar。FishNet 的同步欄位是編譯期 IL weaving 產生的，
     /// Harmony 無法補上，所以這裡只做「伺服器端算出來的結果」，不做新的同步狀態。
     /// </summary>
-    [BepInPlugin(Guid, "HtF Host Rules", "1.0.0")]
+    [BepInPlugin(Guid, ModInfo.Name, ModInfo.Version)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "htf.hostrules";

@@ -3,6 +3,7 @@
     <AssemblyName>HtF.AmmoCounter</AssemblyName>
     <RootNamespace>HtF.AmmoCounter</RootNamespace>
     <Version>1.0.0</Version>
+    <PluginName>HtF Ammo Counter</PluginName>
   </PropertyGroup>
   <Import Project="..\Common.props" />
 </Project>

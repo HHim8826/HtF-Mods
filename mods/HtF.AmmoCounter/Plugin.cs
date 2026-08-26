@@ -28,7 +28,7 @@ namespace HtF.AmmoCounter
     /// 這遊戲沒有備用彈藥的概念——`Weapon.TryRefillAmmo` 直接把彈匣填滿，
     /// 所以顯示只有「彈匣內 / 彈匣容量」，沒有第三個數字。
     /// </summary>
-    [BepInPlugin(Guid, "HtF Ammo Counter", "1.0.0")]
+    [BepInPlugin(Guid, ModInfo.Name, ModInfo.Version)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "htf.ammocounter";

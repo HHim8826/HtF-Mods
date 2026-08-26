@@ -1,177 +1,227 @@
-# HtF.DazedTools
+# HtF Dazed Tools
 
-把 `DazedCommands` 從「改反編譯源碼」搬到 BepInEx 插件，並加上 IMGUI 操作介面。
+English | [繁體中文](https://github.com/HHim8826/HtF-Mods/blob/main/mods/HtF.DazedTools/README_ZH.md)
 
-## 為什麼要換載體
+A window over the game's own built-in dev commands. Press **Insert**, pick a category on the left,
+fill in the parameters, press Run.
 
-反編譯出來的 `../../Assembly-CSharp/` **無法整體編譯**（FishNet IL weaving 產生含 `.` 和 `-`
-的非法識別字，見 `../../AI_CONTEXT.md` 第 2 節），所以改源碼的成果沒辦法變成能分發的東西。
-Harmony patch 完全繞開這件事：只**參照** `Assembly-CSharp.dll`，不重建它。
+**Only you need it.** The commands it sends are the game's own `DazedCommands`; whether they take
+effect is up to the lobby you are in — see "Using it with HtF Guardian" below.
 
-## 架構
+## Install
 
-| 檔案 | 作用 |
+**Mod manager (recommended).** Install through Thunderstore Mod Manager or r2modman and start the
+game modded. BepInEx comes along as a dependency.
+
+**Manual.** Install [BepInEx 5.4.23.5](https://thunderstore.io/c/how-to-fish/p/BepInEx/BepInExPack/)
+first, then drop `HtF.DazedTools.dll` into `BepInEx/plugins/`.
+
+## Using it
+
+1. Start the game modded.
+2. Press **Insert**.
+3. Pick a category, fill the parameters, press Run.
+
+There is a console at the bottom you can type into directly (the leading `/` is optional), with
+history on the up/down buttons. Typing `/xxx` in the chat bar still works too.
+
+### The danger lock
+
+Commands marked DANGER (`finishgame`, `sendfinishgame`, the achievement ones, `spoofprojectile`)
+cannot be pressed until you open the lock at the top of the window.
+
+## Why a plugin instead of edited source
+
+The decompiled `Assembly-CSharp` **cannot be compiled as a whole** — FishNet's IL weaving produces
+identifiers containing `.` and `-`, which are not legal C# — so edits to the decompiled source can
+never become something you can hand to anyone. Harmony patching sidesteps that completely: it only
+*references* `Assembly-CSharp.dll`, it does not rebuild it.
+
+## Structure
+
+| File | Role |
 |---|---|
-| `src/Plugin.cs` | BepInEx 進入點、設定項、熱鍵、Harmony 啟動 |
-| `src/Patches.cs` | 3 個 Harmony patch（見下） |
-| `src/Commands/CommandCore.cs` | 修好的指令實作，從 `DazedCommands.cs` 移植 |
-| `src/UI/CommandRegistry.cs` | 指令中繼資料表 —— **UI 完全由它生成** |
-| `src/UI/GameData.cs` | 魚餌／配件／口袋／馬達／NPC／賭盤對照表 |
-| `src/UI/GameData.Items.cs` | 85 個物品（由手冊第 4.1 節自動產生） |
-| `src/UI/Theme.cs` | 深色主題（執行期產生貼圖 + 複製一份 GUISkin） |
-| `src/UI/ModWindow.cs` | IMGUI 視窗 |
+| `src/Plugin.cs` | BepInEx entry point, settings, hotkey, Harmony bootstrap |
+| `src/Patches.cs` | 3 Harmony patches (below) |
+| `src/Commands/CommandCore.cs` | The fixed command implementations, ported from `DazedCommands.cs` |
+| `src/UI/CommandRegistry.cs` | Command metadata — **the entire UI is generated from it** |
+| `src/UI/GameData.cs` | Lookup tables for bait, attachments, pockets, motors, NPCs, roulette |
+| `src/UI/GameData.Items.cs` | All 85 items |
+| `src/UI/Theme.cs` | Dark theme (textures generated at runtime, plus a copied GUISkin) |
+| `src/UI/ModWindow.cs` | The IMGUI window |
 
-### 移植方式
+### How the port was done
 
-`CommandCore.cs` 是 `../../decompiled-current/DazedCommands.cs` 的機械轉換：
-剝掉反編譯器的 Token 註解、`MonoBehaviour` → 靜態類別、改名避免與遊戲型別衝突、
-移除 `ClientSettings.CheatsEnabled` 閘門（改由插件自己控制）。
-**指令邏輯與所有安全防護原封不動**（批次上限 48、彈丸上限 64、搜尋半徑 60m、
-`/forceunlockpocket` 與 `/buybaitfree` 的下界檢查、NPC 255 阻擋、賭場單例檢查）。
+`CommandCore.cs` is a mechanical conversion of the decompiled `DazedCommands.cs`: decompiler token
+comments stripped, `MonoBehaviour` turned into a static class, renames to avoid clashing with game
+types, and the `ClientSettings.CheatsEnabled` gate removed (the plugin controls that itself).
+**The command logic and every safety limit are unchanged** — batch cap 48, projectile cap 64, search
+radius 60 m, the lower-bound checks in `/forceunlockpocket` and `/buybaitfree`, the NPC 255 block, the
+casino singleton check.
 
-之後在 PR review 又補了幾處**原版就有、但這裡沒照著做**的守衛：
+Review afterwards added a few more guards that **the original had and this did not**:
 
-| 位置 | 問題 |
+| Where | Problem |
 |---|---|
-| `/spawndead` | 選到非生物（收音機、槍…）會 NRE，drip 版早就有這道檢查 |
-| `/allskins` | 沒有船的島上 NRE，而 `LockAllSkins()` 已經先把外觀解鎖整份清空了 |
-| `GetBatchItems` | 標籤寫 60m 但沒有距離判斷，且 `Dictionary` 順序未定義、多碰撞體物品重複計數 |
-| `GetNearestItem` | 訊息說有 60m 限制，實際上沒有 |
-| `Build`（UI） | 中間參數留空又無預設值時整格被吃掉，後面全部左移一位 |
+| `/spawndead` | Picking something that is not a creature (a radio, a gun) throws; the upstream version already checked |
+| `/allskins` | Throws on an island with no boat — and `LockAllSkins()` has already wiped the whole skin list by then |
+| `GetBatchItems` | Labelled 60 m but had no distance test, plus `Dictionary` order is undefined and multi-collider items were counted twice |
+| `GetNearestItem` | The message claimed a 60 m limit; there wasn't one |
+| `Build` (UI) | A blank middle parameter with no default ate its whole cell and shifted everything after it one to the left |
 
-### Harmony patch
+### Harmony patches
 
-| 目標 | 種類 | 用途 |
+| Target | Kind | Purpose |
 |---|---|---|
-| `DazedCommands.IsServerCommand` | Prefix | 聊天欄指令改走修好的版本，跳過原實作 |
-| `Player.BlockInputs` (getter) | Postfix | 視窗開著時擋掉本機玩家的所有輸入 |
-| `ChatManager.ChatMessage(string)` | Postfix | 把遊戲輸出鏡射到視窗的輸出區 |
+| `DazedCommands.IsServerCommand` | Prefix | Route chat-bar commands to the fixed implementations, skipping the original |
+| `Player.BlockInputs` (getter) | Postfix | Block all local player input while the window is open |
+| `ChatManager.ChatMessage(string)` | Postfix | Mirror the game's output into the window's output pane |
 
-三個目標都用 `nameof` 指定，打錯字會在編譯期就失敗，不會拖到執行期。
+All three targets are named with `nameof`, so a typo fails at compile time instead of at runtime.
 
-「開啟遊戲內建作弊鍵」**不是** patch。它原本是 `ClientSettings.CheatsEnabled` 的 getter
-postfix，那是無效的：一行的 auto-property 會被 Mono inline 進呼叫端，patch 靜靜地不生效
-（`MODDING_CONTEXT.md` 第 3.2 節那條規則，這裡自己踩了）。改成呼叫公開的
-`ClientSettings.ToggleCheats(bool)`，每幀比一次以蓋過遊戲自己的作弊按鈕；
-設定關掉時只有「當初是這個 mod 打開的」才關回去。
+"Enable the game's own cheat keys" is **not** a patch. It used to be a postfix on the
+`ClientSettings.CheatsEnabled` getter, which does not work: a one-line auto-property gets inlined
+into its callers by Mono and the patch silently does nothing. It now calls the public
+`ClientSettings.ToggleCheats(bool)`, comparing once per frame so it wins over the game's own cheat
+button, and turning it back off only if this mod was what turned it on.
 
-### IMGUI 的結構一致性規則（踩過坑）
+### The IMGUI structural-consistency rule (learned the hard way)
 
-Unity 每幀對 `OnGUI` 跑**多次**：先 `Layout` 算版面，再跑滑鼠／鍵盤事件，最後 `Repaint`。
-若在後面那幾次裡改動了**版面結構**（控件數量、群組巢狀、某塊要不要顯示），
-就會和 `Layout` 那次算出的結構對不上，GUILayout 取到 null 直接 NRE
-——堆疊會指在當下那個繪製函式裡，很容易誤判成那個函式自己的 bug。
+Unity runs `OnGUI` **several times per frame**: `Layout` first to compute the layout, then the mouse
+and keyboard events, then `Repaint`. Changing the **layout structure** (control count, group nesting,
+whether a block is shown) during one of the later passes disagrees with the tree computed on
+`Layout`, and GUILayout hits a NullReferenceException — with a stack pointing inside whatever drawing
+function you happened to be in, which reads like a bug in that function.
 
-所以 `ModWindow` 的規則是：**會改變結構的狀態變更一律 `Defer()`，只在 `Layout` 事件套用。**
-已知會踩到的有：
+So `ModWindow`'s rule is: **any state change that alters structure is `Defer()`red and applied only on
+the Layout event.** The known cases:
 
-| 動作 | 為什麼是結構變動 |
+| Action | Why it is structural |
 |---|---|
-| 開／關選單覆蓋層 | 整個視窗換成另一種內容 |
-| 切換左側分頁 | 指令清單整份換掉 |
-| 選單搜尋框篩選 | 清單項目數量改變 |
-| `PosOrVoid` 切模式 | 「座標」模式多出三個輸入框 |
-| 輸出區新增／清除訊息 | Label 數量改變 |
+| Opening/closing a picker overlay | The whole window swaps to different content |
+| Switching the left-hand tab | The command list is replaced wholesale |
+| Typing in the picker's search box | The number of list entries changes |
+| `PosOrVoid` switching mode | "Coordinates" mode adds three more input fields |
+| Adding or clearing output messages | The number of labels changes |
 
-另外，參數列會依寬度預算**自動換行**，執行按鈕永遠獨立一列。
-參數多的指令（例如 `/hitplayer`：玩家下拉 + 傷害 + 繞過PvP）加起來會超過卡片寬度，
-GUILayout 會把排在最後的元素擠出可視範圍——執行按鈕就是這樣整個消失的。
+Parameter rows also **wrap automatically** against a width budget, and the Run button always gets its
+own row. Commands with several parameters (`/hitplayer`: player dropdown + damage + bypass PvP) add
+up past the card width, and GUILayout pushes whatever is last out of the visible area — which is
+exactly how the Run button used to disappear entirely.
 
-輸出清單與選單篩選結果都在 `Layout` 時取快照（`_logView`、`PickerView`），
-其餘事件沿用同一份，確保同一幀內結構不變。
-`PosOrVoid` 的模式存在獨立的 `PosModes` 而不是從參數字串反推——
-否則使用者把座標刪空時，`hasPos` 會在幀中途翻轉。
+The output list and the picker's filtered results are both snapshotted on `Layout` (`_logView`,
+`PickerView`) and reused by the other events, so structure cannot change mid-frame. `PosOrVoid`'s mode
+lives in its own `PosModes` rather than being inferred from the parameter string — otherwise clearing
+the coordinates would flip `hasPos` halfway through a frame.
 
-### 遊戲端的守衛（為什麼有些指令看起來「沒用」）
+## Guards on the game's side (why some commands look broken)
 
-這些全部是**遊戲自己的限制**，不是 mod 壞掉。查過原始碼後都已在 UI 上標紅字說明。
+All of these are **the game's own limits**, not a broken mod. Each has been traced in the source and
+is called out in red in the UI.
 
-| 現象 | 真正的原因 |
+| What you see | The actual reason |
 |---|---|
-| `/setitemmultiplier` 對已有倍率的物品無效 | `Item.SetKillscoreMultiplier` 第二道守衛是 `if (_killScoreMultiplier.Value != 1f) return;`——一個物品只能設一次 |
-| `/setitemholder` 搶不到別人手上的東西 | `RpcLogic___SetItemHolder` 裡 `if (syncedHolder && syncedHolder != A_2) { TargetReconcileRejectedItemPickup(...); return; }`。它實際能做的是把**無主**物品塞進某人手裡 |
-| `/tpitems` 當房主時完全沒反應 | `RigidbodySync.ServerSetPosRot` 整個方法體包在 `if (netCon != InstanceFinder.ClientManager.Connection)` 裡。那是防回音用的：正常流程送的就是自己的連線。你是房主時條件永遠為假，**整段被跳過** |
-| `/hijackitemphysics` 看不出效果 | 它只改 `_syncedSimulator`，本來就沒有視覺變化。而且房主送給自己等於沒變 |
-| `/forceplacebet` 選綠沒開出綠 | `ServerStartBet(chosenColor)` 設的是 `_curBetColor`——**你押的顏色**，不是開獎結果。開獎仍然隨機 |
-| `/spoofroulette` 沒有實質效果 | `CasinoManager.UpdateGameObjects(pos, angle)` 只廣播輪盤物件的擺放，純視覺欺騙，不影響結果或賠付 |
-| `/steerboat` 沒反應 | `Boat.ServerSetInput` 開頭 `if (!IsServerInitialized \|\| !_driver.Value) return;`——沒有駕駛就整段忽略。而且真駕駛每幀都在送輸入（`Boat.cs:721`），單發下一幀就被蓋掉 |
+| `/setitemmultiplier` does nothing on an item that already has one | `Item.SetKillscoreMultiplier`'s second guard is `if (_killScoreMultiplier.Value != 1f) return;` — an item can only be set once |
+| `/setitemholder` cannot take something out of someone's hands | `RpcLogic___SetItemHolder` contains `if (syncedHolder && syncedHolder != A_2) { TargetReconcileRejectedItemPickup(...); return; }`. What it can actually do is put an **unheld** item into someone's hands |
+| `/tpitems` does nothing at all while hosting | `RigidbodySync.ServerSetPosRot`'s entire body is wrapped in `if (netCon != InstanceFinder.ClientManager.Connection)`. That is echo suppression: the normal flow sends your own connection. As the host the condition is always false, so **the whole thing is skipped** |
+| `/hijackitemphysics` has no visible effect | It only changes `_syncedSimulator`; there was never anything to see. And as the host, sending it to yourself changes nothing |
+| `/forceplacebet` on green does not make green come up | `ServerStartBet(chosenColor)` sets `_curBetColor` — **the colour you bet on**, not the result. The spin is still random |
+| `/spoofroulette` has no real effect | `CasinoManager.UpdateGameObjects(pos, angle)` only broadcasts where the roulette objects sit. Pure visual deception; it does not affect the result or the payout |
+| `/steerboat` does nothing | `Boat.ServerSetInput` opens with `if (!IsServerInitialized \|\| !_driver.Value) return;` — no driver, whole thing ignored. And the real driver sends input every frame (`Boat.cs:721`), so a single shot is overwritten on the next one |
 
-#### 因此改掉的地方
+### What was changed because of that
 
-- **`/tpitems` 與 `/hijackitemphysics` 不再送 RPC**，改用公開的
-  `RigidbodySync.StartSimulateLocal(pos, rot)` 先接管模擬權再定位——
-  這正是遊戲自己搬東西的做法，房主和客戶端兩邊都有效。
-  已經是本機在模擬的物品改走 `TeleportToPosRot()`，因為 `StartSimulateLocal`
-  在這種情況會提早 return 而不搬動（`pos` 剛好等於 `Vector3.zero` 時也會略過定位）。
-- **`/setitemholder` 預設改挑最近的無主物品**，並在目標已被持有時明講會被伺服器退回。
-- **`/steerboat` 多了「持續秒數」參數**（預設 3 秒），由 `PumpBoatInput()` 每幀重送蓋過真駕駛。
-- **`/addmoney`、`/removemoney` 支援金額參數**（預設仍是 9999）。
-- **`/spoofchat` 已移除**。它確實能運作（`SendChatMessage` 是無 `ExcludeServer` 的
-  ObserversRpc，連房主自己都收得到），但那純粹是冒名發言的騷擾工具，沒有除錯價值。
+- **`/tpitems` and `/hijackitemphysics` no longer send RPCs.** They call the public
+  `RigidbodySync.StartSimulateLocal(pos, rot)` to take over simulation and then place the item —
+  which is how the game itself moves things, and it works both as host and as client. Items already
+  simulated locally go through `TeleportToPosRot()` instead, because `StartSimulateLocal` returns
+  early in that case without moving anything (and it also skips placement when `pos` happens to equal
+  `Vector3.zero`).
+- **`/setitemholder` now defaults to the nearest unheld item**, and says up front that the server will
+  reject the request if the target is already held.
+- **`/steerboat` gained a duration parameter** (3 seconds by default), resent every frame by
+  `PumpBoatInput()` so it overrides the real driver.
+- **`/addmoney` and `/removemoney` take an amount** (still 9999 by default).
+- **`/spoofchat` was removed.** It does work (`SendChatMessage` is an ObserversRpc with no
+  `ExcludeServer`, so even the host receives it), but it is purely a tool for impersonating people in
+  chat and has no debugging value.
 
-### UI 是資料驅動的
+## The UI is data-driven
 
-`CommandRegistry.All` 裡每個指令宣告自己的分類、風險等級、參數型別。
-`ModWindow` 只有一個通用的算繪迴圈——加新指令只要在 registry 加一行，
-不用碰 UI 程式碼。參數型別決定控件：`Item` 給可搜尋的 85 項清單、
-`Player` 給當前玩家下拉、`Bait`/`Pocket` 自動跳過會自踢的索引 0。
+Every command in `CommandRegistry.All` declares its own category, risk level and parameter types.
+`ModWindow` has a single generic render loop — adding a command means adding one line to the
+registry, with no UI code to touch. Parameter type decides the control: `Item` gets the searchable
+85-entry list, `Player` gets a dropdown of the current players, and `Bait` / `Pocket` automatically
+skip the index 0 that would get you kicked.
 
-## 建置
+## Settings
+
+`BepInEx/config/htf.dazedtools.cfg`, written on first run. Everything is also editable in game
+through [HtF Config Menu](https://github.com/HHim8826/HtF-Mods/tree/main/mods/HtF.ConfigMenu) (F9).
+
+| Setting | Default | |
+|---|---|---|
+| Toggle Key | Insert | |
+| UI Scale | 1.0 | 0.6 – 2.0 |
+| Font | Microsoft JhengHei UI | System font name. Empty = the built-in Unity font, which renders CJK as boxes |
+| Enable The Game's Own Cheat Keys | off | Turns on the game's debug hotkeys: M/N for money, O to change island, comma to skip the tutorial |
+| Unlock Danger Commands By Default | off | |
+
+### Why the .cfg file is in Chinese
+
+The section and key names inside the `.cfg` are Chinese, and they stay that way in every language.
+They are identifiers, not labels: BepInEx uses them to find your saved values, so translating them
+would make every setting you had tuned look like a brand new one and reset it to default. The names
+in the table above are what the in-game settings page shows you.
+
+## Language
+
+The whole window is bilingual — categories, command descriptions, warnings, parameter names and
+dropdown entries. It follows the language setting owned by
+[HtF Config Menu](https://github.com/HHim8826/HtF-Mods/tree/main/mods/HtF.ConfigMenu); without that
+mod it follows the game's own language.
+
+**The command strings it sends are not affected by language** — `/spawn tuna`, `me`, `all` and
+`confirm` are the game's command syntax, not text for people to read.
+
+## Using it with HtF Guardian
+
+[HtF Guardian](https://github.com/HHim8826/HtF-Mods/tree/main/mods/HtF.Guardian) blocks exactly the
+RPCs this mod sends. **They do not conflict while you are the host** — the host is exempt by default,
+so the commands still work. Use this in someone else's lobby while they run Guardian and the commands
+get blocked, which is the intended behaviour.
+
+## Compatibility
+
+- *How to Fish* 1.0.9, Unity 6000.4.4f1 (Mono)
+- BepInEx 5.4.23.5, Harmony 2.9
+
+## Building
 
 ```bash
-dotnet build
+dotnet build mods/HtF.DazedTools/HtF.DazedTools.csproj
 ```
 
-建置後會自動複製到 r2modman 的 profile。路徑可覆寫：
+Paths can be overridden with `-p:GameManaged="..."` / `-p:ProfileDir="..."`; the defaults live in
+`../Common.props`.
 
-```bash
-dotnet build -p:GameManaged="D:\...\How to Fish_Data\Managed" -p:ProfileDir="%AppData%\r2modmanPlus-local\HowToFish\profiles\Default"
-```
+## Not yet verified in game
 
-`Managed/` 底下有 `Assembly-CSharp` 的手動備份副本（現在叫 `- 1.0.9`，以前叫 `- 複製`），
-csproj 用 `* - *.dll` 型樣排除，不用固定檔名——對方再改一次名也不會載到舊版。
+IMGUI layering, font loading and `PlayerCamera.ToggleMouse` were all confirmed fine. What compiles
+but has **not** been run yet is the batch of review fixes:
 
-## 使用
+- `/allskins` on an island with no boat (should unlock item skins only and report one line, without
+  touching boat skins)
+- The 60 m radius and "nearest 48" ordering of `/hitcreature all`
+- The message from `/spawndead` when the pick is not a creature
+- The refusal message when a middle parameter is left blank (`/slots` with a blank item name is the
+  easiest test)
+- Whether the M/N/O hotkeys actually respond now that "enable the game's own cheat keys" calls
+  `ToggleCheats` — this one was **entirely ineffective** before (it patched a getter that gets
+  inlined), so it is effectively a first run
 
-1. r2modman 按 **Start modded**
-2. 遊戲內按 **Insert**
-3. 左側選分類 → 填參數 → 按「執行」
+## Links
 
-底部有主控台可直接打指令（不用加 `/` 也行），上下鍵按鈕可翻歷史。
-聊天欄輸入 `/xxx` 一樣有效。
-
-### 設定（`BepInEx/config/htf.dazedtools.cfg`，第一次執行後產生）
-
-| 項目 | 預設 | 說明 |
-|---|---|---|
-| 開關鍵 | Insert | |
-| 縮放 | 1.0 | 0.6–2.0 |
-| 字型 | Microsoft JhengHei UI | 留空則用 Unity 內建字型，中文可能變方塊 |
-| 開啟遊戲內建作弊鍵 | false | 開了之後 M/N 加減錢、O 換島、逗號跳教學會生效 |
-| 預設解鎖危險指令 | false | |
-
-### 危險指令鎖
-
-標為「危險」的指令（`finishgame`、`sendfinishgame`、成就相關、`spoofprojectile`）
-預設不能按，要先勾視窗右上的「解鎖危險指令」。
-
-### 中英雙語
-
-分類、指令說明、警告、參數名稱、下拉選單的項目都有英文版，跟著 `HtF.ConfigMenu`
-的「語言」設定走（沒裝 ConfigMenu 就跟著遊戲語系）。指令說明的中英兩份就寫在
-`CommandRegistry.cs` 的同一行上，視窗自己的文字在 `src/UI/Localization.cs`。
-
-**送出去的指令字串不受語言影響**——`/spawn tuna`、`me`、`all`、`confirm`
-是遊戲的指令語法，不是給人看的文案。共用底層見 `mods/README.md` 的〈中英雙語〉。
-
-## 尚未在遊戲內驗證
-
-IMGUI 的層級、字型載入、`PlayerCamera.ToggleMouse` 這三項當初的疑慮都已經確認沒問題，
-記在 `../../MODDING_CONTEXT.md` 第 4 節。目前**編譯通過但還沒實際跑過**的是 review 那批修正：
-
-- 沒有船的島上按 `/allskins`（應該只解鎖物品外觀並回報一句，不再動到船體外觀）
-- `/hitcreature all` 的 60m 半徑與「最近的 48 個」排序
-- `/spawndead` 選到非生物時的提示
-- 參數中間留空時拒絕送出的提示（`/slots` 物品名留空最好測）
-- 「開啟遊戲內建作弊鍵」改成呼叫 `ToggleCheats` 之後，M/N/O 熱鍵是否真的會動
-  ——這一項原本就是**無效**的（patch 了會被 inline 的 getter），所以等於第一次驗
+- [Source, and the other seven HtF mods](https://github.com/HHim8826/HtF-Mods)
+- [Changelog](https://github.com/HHim8826/HtF-Mods/blob/main/mods/HtF.DazedTools/CHANGELOG.md)
+- MIT licensed

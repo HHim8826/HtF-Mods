@@ -1,0 +1,9 @@
+{
+  "name": "HtF_DazedTools",
+  "version_number": "1.0.0",
+  "website_url": "https://github.com/HHim8826/HtF-Mods",
+  "description": "A window for the game's own built-in dev commands: searchable item lists, player dropdowns, a console with history, and a lock on the destructive ones. English / 繁體中文.",
+  "dependencies": [
+    "BepInEx-BepInExPack-5.4.2305"
+  ]
+}

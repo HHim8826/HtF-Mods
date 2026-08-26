@@ -4,16 +4,16 @@
 共用的只有建置設定（`Common.props`）和雙語底層（`Shared/Loc.cs`），
 兩者都是編譯期的東西——`Shared` 是直接編進每個 DLL 的，不是執行期相依。
 
-| 專案 | GUID | 誰要裝 | 做什麼 |
-|---|---|---|---|
-| `HtF.HudNumbers` | `htf.hudnumbers` | 只有你自己 | 血量／飽食／物品數值化 |
-| `HtF.AmmoCounter` | `htf.ammocounter` | 只有你自己 | 手上槍械的剩餘子彈 |
-| `HtF.Guardian` | `htf.guardian` | 只有房主 | ServerRpc 驗證層、速率限制、踢出／封鎖 |
-| `HtF.HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值 |
-| `HtF.Economy` | `htf.economy` | 房主（售價顯示要一致則全員） | 賣價、花費、起始金錢、抽魚權重、保底、咬鉤時間 |
-| `HtF.RadioMusic` | `htf.radiomusic` | 只有你自己（同步播放則全員） | 收音機自訂音樂、自動接下一首、一起聽、雜訊與音量 |
-| `HtF.ConfigMenu` | `htf.configmenu` | 只有你自己 | 遊戲內設定管理頁面（通用） |
-| `HtF.DazedTools` | `htf.dazedtools` | 只有你自己 | ServerRPC 指令工具（見該資料夾的 README） |
+| 專案 | Thunderstore | GUID | 誰要裝 | 做什麼 |
+|---|---|---|---|---|
+| `HtF.HudNumbers` | `HtF_HudNumbers` | `htf.hudnumbers` | 只有你自己 | 血量／飽食／物品數值化 |
+| `HtF.AmmoCounter` | `HtF_AmmoCounter` | `htf.ammocounter` | 只有你自己 | 手上槍械的剩餘子彈 |
+| `HtF.Guardian` | `HtF_Guardian` | `htf.guardian` | 只有房主 | ServerRpc 驗證層、速率限制、踢出／封鎖 |
+| `HtF.HostRules` | `HtF_HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值 |
+| `HtF.Economy` | `HtF_Economy` | `htf.economy` | 房主（售價顯示要一致則全員） | 賣價、花費、起始金錢、抽魚權重、保底、咬鉤時間 |
+| `HtF.RadioMusic` | `HtF_RadioMusic` | `htf.radiomusic` | 只有你自己（同步播放則全員） | 收音機自訂音樂、自動接下一首、一起聽、雜訊與音量 |
+| `HtF.ConfigMenu` | `HtF_ConfigMenu` | `htf.configmenu` | 只有你自己 | 遊戲內設定管理頁面（通用） |
+| `HtF.DazedTools` | `HtF_DazedTools` | `htf.dazedtools` | 只有你自己 | ServerRPC 指令工具（見該資料夾的 README） |
 
 `HtF.Guardian` 和 `HtF.DazedTools` 是同一件事的兩面：一個送這些 RPC，一個擋這些 RPC。
 你當房主時兩個一起裝不會打架（房主預設豁免），見 `HtF.Guardian/README.md`。
@@ -24,6 +24,23 @@ dotnet build HtF.HudNumbers/HtF.HudNumbers.csproj
 
 每個專案建置後會自動部署到 r2modman 的 profile。路徑可用
 `-p:GameManaged="..."` / `-p:ProfileDir="..."` 覆寫。
+
+## 每個資料夾裡還有什麼
+
+除了程式碼，每個 mod 資料夾都有一組 Thunderstore 套件用的檔案——它們就是套件
+zip 根目錄要放的東西：
+
+| 檔案 | 用途 |
+|---|---|
+| `manifest.json` | 套件名（點換成底線）、版本、說明、相依 |
+| `README.md` | **英文**。Thunderstore 頁面顯示的就是它 |
+| `README_ZH.md` | 同一份的繁體中文版 |
+| `CHANGELOG.md` | 版本更新記錄 |
+| `icon.png` | 256×256 的 PNG，由 `.github/tools/make_icons.py` 產生 |
+
+版本號的單一來源是 `.csproj` 的 `<Version>`：`Common.props` 的 `GenerateModInfo`
+把它產生成 `ModInfo.Version` 供 `[BepInPlugin]` 引用，`manifest.json` 裡那一份則由
+`.github/tools/check_repo.py` 對帳。細節見根目錄 README 的〈發布到 Thunderstore〉。
 
 ---
 

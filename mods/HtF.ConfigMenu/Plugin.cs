@@ -15,7 +15,7 @@ namespace HtF.ConfigMenu
     ///
     /// 純客戶端、只讀寫設定檔，不碰遊戲狀態也不送封包。
     /// </summary>
-    [BepInPlugin(Guid, "HtF Config Menu", "1.0.0")]
+    [BepInPlugin(Guid, ModInfo.Name, ModInfo.Version)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "htf.configmenu";

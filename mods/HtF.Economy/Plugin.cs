@@ -22,7 +22,7 @@ namespace HtF.Economy
     /// 咬鉤時間與抽魚權重則是**純房主專屬**：唯一的讀取點只在伺服器端跑，
     /// 純客戶端調它不會有任何效果（詳見 <see cref="BaitTuner"/>）。
     /// </summary>
-    [BepInPlugin(Guid, "HtF Economy", "1.1.0")]
+    [BepInPlugin(Guid, ModInfo.Name, ModInfo.Version)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "htf.economy";

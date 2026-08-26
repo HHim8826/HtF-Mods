@@ -3,6 +3,7 @@
     <AssemblyName>HtF.Guardian</AssemblyName>
     <RootNamespace>HtF.Guardian</RootNamespace>
     <Version>1.0.0</Version>
+    <PluginName>HtF Guardian</PluginName>
   </PropertyGroup>
   <Import Project="..\Common.props" />
 </Project>
