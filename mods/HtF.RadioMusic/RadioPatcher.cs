@@ -226,9 +226,26 @@ namespace HtF.RadioMusic
             RadioChannel[] channels = Channels(radio);
             if (channels == null) return;
 
+            double now = Sync.Now();
+            bool synced = Plugin.SyncPlayback.Value;
+
             for (int i = 0; i < channels.Length; i++)
             {
-                AudioClip clip = MusicLibrary.ClipFor(i, channels.Length);
+                AudioClip clip;
+                float offset;
+
+                if (synced && Sync.Target(i, channels.Length, now, out clip, out offset))
+                {
+                    // 同步模式：曲目和位置都由網路時間決定
+                }
+                else
+                {
+                    clip = MusicLibrary.ClipFor(i, channels.Length);
+                    // 非同步模式也定位到 clip 內的共同位置，而不是從 0 開始——
+                    // 那正是遊戲自己解除靜音時做的事（ToggleMute 的
+                    // `time % clip.length`），跟著它走，單曲頻道就自然是同步的。
+                    offset = PositionIn(clip, now);
+                }
                 if (!clip) continue; // 沒有對應曲目就保留原曲
 
                 AudioSource src = SourceOf(channels[i]);
@@ -240,8 +257,75 @@ namespace HtF.RadioMusic
                 // clip 為 null 會 NRE，所以上面確定 clip 不是 null 才換。
                 if (wasPlaying)
                 {
-                    src.time = 0f;
+                    src.time = offset;
                     src.Play();
+                }
+            }
+        }
+
+        /// <summary>單一 clip 內的共同位置，算法照抄 <c>RadioChannel.ToggleMute</c>。</summary>
+        private static float PositionIn(AudioClip clip, double now)
+        {
+            if (!clip || now < 0.0 || clip.length <= 0.01f) return 0f;
+            return Mathf.Clamp((float)(now % clip.length), 0f, clip.length - 0.01f);
+        }
+
+        // ------------------------------------------------------------------ 同步播放
+
+        /// <summary>
+        /// 位置容差（秒）。超過才校正——每幀硬寫 <c>AudioSource.time</c> 會有卡頓聲，
+        /// 而「一起聽」本來就不需要取樣級的精準。
+        /// </summary>
+        private const float DriftTolerance = 1.0f;
+
+        /// <summary>
+        /// 每幀把各頻道拉回共同的時間軸。只在「同步播放」開著時做事。
+        ///
+        /// 需要每幀跑是因為**換曲**：一首放完要接下一首，而 `ApplyVolume`
+        /// 只在轉台和 Boss 事件時才被呼叫，接不了。
+        ///
+        /// 順帶收掉一個小瑕疵：玩家轉到某台時，遊戲的 `ToggleMute` 會用
+        /// `網路時間 % clip.length` 定位，那跟我們的節目表偏移不一樣。
+        /// 這裡在同一幀就把它校正回來，所以聽不出來。
+        /// </summary>
+        internal static void TickSync()
+        {
+            if (Plugin.SyncPlayback == null || !Plugin.SyncPlayback.Value) return;
+            if (!MusicLibrary.Ready || MusicLibrary.TotalClips == 0) return;
+
+            double now = Sync.Now();
+            if (now < 0.0) return;
+
+            Live.RemoveAll(r => !r);
+            for (int r = 0; r < Live.Count; r++)
+            {
+                RadioChannel[] channels = Channels(Live[r]);
+                if (channels == null) continue;
+
+                for (int i = 0; i < channels.Length; i++)
+                {
+                    AudioClip clip;
+                    float offset;
+                    if (!Sync.Target(i, channels.Length, now, out clip, out offset)) continue;
+
+                    AudioSource src = SourceOf(channels[i]);
+                    if (!src) continue;
+
+                    try
+                    {
+                        if (src.clip != clip)
+                        {
+                            bool wasPlaying = src.isPlaying;
+                            src.clip = clip;
+                            src.time = offset;
+                            if (wasPlaying) src.Play();
+                        }
+                        else if (src.isPlaying && Mathf.Abs(src.time - offset) > DriftTolerance)
+                        {
+                            src.time = offset;
+                        }
+                    }
+                    catch (Exception e) { Plugin.Log.LogWarning("同步播放位置失敗：" + e.Message); }
                 }
             }
         }

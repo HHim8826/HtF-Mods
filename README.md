@@ -16,8 +16,9 @@ language setting automatically.
 | `HtF.AmmoCounter` | `htf.ammocounter` | 只有你自己 | 手上槍械的剩餘子彈（數字／圓點） |
 | `HtF.Guardian` | `htf.guardian` | 只有房主 | ServerRpc 驗證層、速率限制、封鎖名單、監控面板 |
 | `HtF.HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值 |
-| `HtF.Economy` | `htf.economy` | 房主（售價顯示要一致則全員） | 賣價、花費、起始金錢、抽魚權重、保底、咬鉤時間 |
-| `HtF.RadioMusic` | `htf.radiomusic` | 只有你自己 | 收音機自訂音樂、雜訊與音量 |
+| `HtF.Economy` | `htf.economy` | 房主（顯示要一致則全員） | 賣價、花費、起始金錢 |
+| `HtF.FishingEcology` | `htf.fishingecology` | 只有房主 | 抽魚權重、保底、咬鉤時間 |
+| `HtF.RadioMusic` | `htf.radiomusic` | 只有你自己（同步播放則全員） | 收音機自訂音樂、雜訊與音量、一起聽 |
 | `HtF.ConfigMenu` | `htf.configmenu` | 只有你自己 | 遊戲內設定管理頁面（通用，F9） |
 | `HtF.DazedTools` | `htf.dazedtools` | 只有你自己 | 遊戲內建 dev 指令的圖形介面（Insert） |
 

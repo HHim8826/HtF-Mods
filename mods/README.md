@@ -270,6 +270,7 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
 
 **純客戶端。** 頻率是 SyncVar 會同步（別人看得到你在轉台），但音檔是本地的，
 所以只有你自己聽得到自訂音樂，不影響任何人，也不需要別人裝。
+想跟別人一起聽，見下面〈同步播放〉。
 
 把 `.ogg` / `.wav` / `.mp3` 丟進 `BepInEx/config/HtF.RadioMusic/`（第一次執行會自動建好，
 裡面有說明檔）。直接放 = 依序輪流分給各頻道；放進子資料夾 `1\` `2\` = 指定給該頻道。
@@ -278,6 +279,45 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
 建議用 `.ogg`——Unity 執行期解碼最穩。載入走 `UnityWebRequestMultimedia` 且
 **關閉串流**（`streamAudio = false`），因為遊戲解除靜音時會做
 `_channelSource.time = t % clip.length` 的定位，串流 clip 的 seek 不可靠。
+
+### 同步播放（一起聽同一首）
+
+**遊戲本來就做了一半。** `RadioChannel.ToggleMute` 解除靜音時是這樣定位的：
+
+```csharp
+this._channelSource.time = time % this._channelSource.clip.length;
+this._channelSource.Play();
+```
+
+而傳進去的 `time` 是 `TimeManager.TicksToTime(TickType.Tick)`——**網路時間**，
+FishNet 讓每個客戶端的 `Tick` 對齊。所以原版電台本來就是同步的：
+兩個人同時轉到同一台，聽到的是同一首歌的同一個位置。
+
+自訂音樂各聽各的，是因為缺三塊：
+
+| 缺的 | 怎麼補 |
+|---|---|
+| 檔案要一樣 | **補不了**——mod 不能替你發音檔。這是這個功能唯一的前提，只能自己約好 |
+| 選曲要一致 | 載入已經是 `StringComparer.OrdinalIgnoreCase` 排序＋輪流分配，所以同樣的檔案會落到同一個頻道；但「同頻道多首時放第幾首」原本是本機游標（F7），一按就散 |
+| 換 clip 要重新定位 | 原本是 `src.time = 0f`，直接掉出共同時間軸 |
+
+打開「同步播放」之後，一個頻道的曲目會串成**一條連續的時間軸**（像真的電台節目表）：
+總長 = 各首長度相加，`網路時間 % 總長` 落在哪一首的哪一秒就播那裡。
+這是純函數——同樣的檔案、同樣的時鐘，每台機器算出來必然一樣，
+**不需要新增任何同步狀態**（Harmony 本來也補不上 SyncVar 或 ServerRpc）。
+
+兩個代價，都是本質上的：
+
+- **「下一首」會失效。** 跳過是本機動作，沒有辦法讓其他人跟著跳——
+  那需要一條新的同步訊息，而那正是 Harmony 做不到的事。
+  （曾考慮把選曲編碼進 `Radio._frequency` 的低位元來偷渡，但那會跟真正的轉台打架、
+  頻率數字也會變得很奇怪，不值得。）
+- **對時精度是「同一首同一段」，不是取樣級對齊。** 位置容差設 1 秒，
+  超過才校正——每幀硬寫 `AudioSource.time` 會有卡頓聲，而一起聽本來也不需要那麼準。
+
+沒打開時行為不變（本機播放、F7 可以切歌），只是換曲改成定位到 clip 內的共同位置
+而不是從 0 開始——那本來就是遊戲自己解除靜音時做的事，所以**單曲頻道即使不開這個
+設定也是同步的**。
 
 ### 那個「沙沙」聲是故意的
 
