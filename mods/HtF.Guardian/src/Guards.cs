@@ -195,6 +195,10 @@ namespace HtF.Guardian
             // 0 放行：伺服器端本來就是無動作，擋它只會製造假違規。
             if (Val && (__2 < 0 || __2 > Plugin.MaxCreatureDamage.Value))
                 return G.Deny("HitCreature", Why.數值超出範圍);
+
+            // 記下「誰打了這隻」。SetItemMultiplier 沒有操作者可以驗，
+            // 唯一能用的身分就是這個（見 Damagers 的說明）。
+            Damagers.Record(__0, Sender.Current);
             return true;
         }
 
@@ -374,24 +378,26 @@ namespace HtF.Guardian
             return true;
         }
 
-        internal static bool SetItemMultiplier(Item __0, ref float __1)
+        internal static bool SetItemMultiplier(Item __0, float __1)
         {
             if (Sender.Exempt) return true;
             if (!G.Rate("SetItemMultiplier", 20f)) return false;
 
-            // 只夾數值是不夠的：目標物品也是客戶端指定的，光有上限還是能對場上
-            // 任何值錢的東西設一個倍率。唯一的合法送出點是 Creature.LocalHit
-            // （Creature.cs:397）——擊殺者的客戶端替**剛死的那隻生物**設倍率，
-            // 而且它在 HitCreature 之後才送（兩條都是 Reliable 同序），
-            // 所以守衛跑到這裡時 Hp 已經歸零、IsDead 為 true。
+            // 只夾數值是不夠的：目標物品也是客戶端指定的。而且這一改**不可逆**——
+            // Item.SetKillscoreMultiplier 有 `if (_killScoreMultiplier.Value != 1f) return;`
+            // （Item.cs:893），一個物品只能設一次，所以搶先對別人剛釣上來的魚設 0，
+            // 那條魚就永遠賣不出錢（Item.TotalWorth 最後會乘上它）。
             //
-            // 遊戲另外有一道 `if (_killScoreMultiplier.Value != 1f) return;`
-            // （Item.cs:893），一個物品只能設一次，所以這裡擋掉「非生物目標」
-            // 之後，剩下的攻擊面只有「搶在擊殺者之前對某隻死掉的生物設值」。
+            // 這條沒有「操作者」可以驗：唯一的送出點 Creature.LocalHit（Creature.cs:397）
+            // 是擊殺者的客戶端替剛死的生物設值，而擊殺者既不是持有者也不是模擬者。
+            // 所以驗的是「發送端是不是最後打這隻的人」——那份資訊由 HitCreature
+            // 的守衛順手記下來（見 Damagers）。順序有保證：LocalHit 先送 HitCreature
+            // 再送 SetItemMultiplier，兩條都是 Reliable 同序。
             if (Id)
             {
                 Creature creature = __0 ? __0.Creature : null;
-                if (!creature || !creature.IsDead) return G.Deny("SetItemMultiplier", Why.目標無效);
+                if (!creature || !creature.IsDead || !Damagers.IsLastDamager(creature, Sender.Current))
+                    return G.Deny("SetItemMultiplier", Why.目標無效);
             }
 
             if (!Val) return true;
@@ -536,7 +542,9 @@ namespace HtF.Guardian
             if (Id && !Sender.Owns(__0)) return G.Deny("BuyBait", Why.身分不符);
 
             // ServerBoughtBait 也是 `_ownedBaits[index - 1]`，同一個 index−1 陷阱。
-            if (Idx && __1 < 1) return G.Deny("BuyBait", Why.索引超出範圍);
+            // 上界遊戲自己有擋（`A_2 >= GameInfo.AllBaits.Count` 就 return），
+            // 這裡再擋一次是為了不倚賴那一行——真正致命的是下界。
+            if (Idx && (__1 < 1 || __1 >= BaitCount())) return G.Deny("BuyBait", Why.索引超出範圍);
 
             if (Plugin.CheckPrices.Value)
             {
@@ -620,6 +628,9 @@ namespace HtF.Guardian
             // ——id 剛好是 255 時整個守衛被跳過，接著的 GetShowingQuest 會走到
             // 字典索引器 `_idToNpc[255]` 丟 KeyNotFoundException。
             if (Idx && __1 == 255) return G.Deny("TakeItemFromNpc", Why.索引超出範圍);
+            // 而那個守衛本身就裸解參照 NPCManager.Instance，沒有 NPC 的島上是 null
+            // ——跟 PlaceBet / UpdateRoulette 的 CasinoManager 是同一種問題。
+            if (Idx && !Alive(NPCManager.Instance)) return G.Deny("TakeItemFromNpc", Why.目標無效);
             return true;
         }
 
@@ -647,10 +658,28 @@ namespace HtF.Guardian
         /// 存取會丟 MissingReferenceException，而那會讓發送者被踢掉。
         /// Unity 的 <c>bool</c> 轉換正是用來分辨這種假 null 的。
         /// </summary>
-        private static bool CasinoAlive()
+        private static bool CasinoAlive() { return Alive(CasinoManager.Instance); }
+
+        /// <summary>
+        /// Unity 的「假 null」判定。這些 <c>Instance</c> 都是純靜態欄位，
+        /// 只在 <c>Awake</c> 指派、銷毀時不清空，所以離開該關卡之後是
+        /// 「已銷毀但參照還在」——存取會丟 MissingReferenceException，
+        /// 而那會讓發送者被踢掉。<c>bool</c> 轉換正是用來分辨這種假 null 的。
+        /// </summary>
+        private static bool Alive(UnityEngine.Object instance)
         {
-            try { return CasinoManager.Instance; }
+            try { return instance; }
             catch (Exception) { return false; }
+        }
+
+        private static int BaitCount()
+        {
+            try
+            {
+                var all = GameInfo.AllBaits;
+                return all != null ? all.Count : int.MaxValue;   // 讀不到就不擋
+            }
+            catch (Exception) { return int.MaxValue; }
         }
 
         // ================================================================== 船

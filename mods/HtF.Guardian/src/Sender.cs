@@ -118,10 +118,18 @@ namespace HtF.Guardian
         }
 
         /// <summary>
-        /// 發送端的 Steam ID。取自 <c>conn.GetAddress()</c>——那是傳輸層給的位址，
-        /// 客戶端改不了；<c>Server.RpcLogic___SpawnPlayer</c> 也是用同一個來源
-        /// 認人的（見它對 <c>SteamManager.IsCurrentLobbyMember</c> 的檢查）。
-        /// 拿不到就回 0。
+        /// 發送端的 Steam ID，拿不到就回 0。
+        ///
+        /// **來源是 <c>conn.GetAddress()</c>，而「它就是 SteamID」這件事不是
+        /// 從 API 名稱推論的——是遊戲自己這樣用的。** <c>RpcLogic___SpawnPlayer</c>
+        /// 在 <c>ConnectionManager.IsUsingSteam</c> 為真時做的正是
+        /// <c>ulong.TryParse(conn.GetAddress(), out steamID)</c> 再拿去
+        /// <c>SteamManager.IsCurrentLobbyMember</c> 比對大廳成員；沒過就踢人。
+        /// 也就是說在 Steam 傳輸底下，這個值已經被遊戲當成身分在用了。
+        ///
+        /// 不是 Steam 傳輸（或位址不是那個格式）時這裡回 0，而所有吃身分的功能
+        /// ——冒名發言改寫、封鎖名單、面板上的 Steam ID——都會跟著失效。
+        /// 那種情況**不能默默過去**，所以第一次遇到會在 log 留一行。
         /// </summary>
         internal static ulong SteamIdOf(NetworkConnection conn)
         {
@@ -129,9 +137,26 @@ namespace HtF.Guardian
             try
             {
                 ulong id;
-                return ulong.TryParse(conn.GetAddress(), out id) ? id : 0UL;
+                if (ulong.TryParse(conn.GetAddress(), out id) && id != 0UL) return id;
+                WarnNoSteamIdentity(conn);
+                return 0UL;
             }
             catch (Exception) { return 0UL; }
+        }
+
+        private static bool _warnedNoIdentity;
+
+        private static void WarnNoSteamIdentity(NetworkConnection conn)
+        {
+            if (_warnedNoIdentity) return;
+            // 本機連線在傳輸層上本來就沒有 Steam 位址，那不是異常。
+            try { if (conn.IsLocalClient) return; } catch (Exception) { }
+
+            _warnedNoIdentity = true;
+            Plugin.Log.LogWarning(
+                "連線的位址不是 Steam ID（可能不是 Steam 傳輸）。"
+                + "封鎖名單、冒名發言改寫、面板上的 Steam ID 這一場都不會生效，"
+                + "其餘守衛照常運作。");
         }
 
         internal static ulong SteamId { get { return SteamIdOf(Current); } }

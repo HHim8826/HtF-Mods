@@ -52,7 +52,7 @@ namespace HtF.Guardian
         private static float _nextRefresh;
 
         private static Font _font;
-        private static bool _fontTried;
+        private static string _loadedFont;      // null = 還沒載過；"" = 載過且是「不指定字型」
         private static Styles _s;
 
         // ------------------------------------------------------------------ 生命週期
@@ -380,12 +380,20 @@ namespace HtF.Guardian
 
         // ------------------------------------------------------------------ 樣式
 
+        /// <summary>
+        /// 載字型。字型名稱改了就重載並重建樣式——設定可以在遊戲中改，
+        /// 單向旗標會讓改動要重開遊戲才生效。
+        /// </summary>
         private static void EnsureFont()
         {
-            if (_fontTried) return;
-            _fontTried = true;
-            string name = Plugin.FontName.Value;
-            if (string.IsNullOrEmpty(name)) return;
+            string name = Plugin.FontName.Value ?? "";
+            if (_loadedFont == name) return;
+
+            _loadedFont = name;
+            _font = null;
+            _s = null;              // 樣式帶著舊字型，要一起重建
+
+            if (name.Length == 0) return;
             try { _font = Font.CreateDynamicFontFromOSFont(name, 13); }
             catch (Exception e) { Plugin.Log.LogWarning("載入字型 " + name + " 失敗：" + e.Message); }
         }

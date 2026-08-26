@@ -10,16 +10,19 @@ using FishNet.Transporting;
 namespace HtF.Guardian
 {
     /// <summary>
-    /// 連線層的守衛：封鎖名單在這裡生效，斷線的統計資料也在這裡清掉。
+    /// 連線層的守衛：封鎖名單在這裡生效，斷線的統計資料也在這裡清掉，
+    /// 換島時也在這裡讓價目表失效。
     ///
-    /// <c>ServerManager</c> 要等 <c>NetworkManager</c> 起來才存在，而它會隨著
-    /// 開房／退房來回出現，所以每幀比一次目前的實例，換了就重新掛事件。
-    /// 這比在某個「開房完成」的時機點掛一次可靠——那種時機點遊戲改版就會變。
+    /// <c>ServerManager</c> 要等 <c>NetworkManager</c> 起來才存在，所以定期比一次
+    /// 目前的實例，換了就重新掛事件。這比在某個「開房完成」的時機點掛一次可靠
+    /// ——那種時機點遊戲改版就會變。
     /// </summary>
     internal static class Watcher
     {
         private static ServerManager _attached;
         private static float _nextPoll;
+        private static bool _wasHosting;
+        private static int _lastIsland = -1;
 
         /// <summary>
         /// <c>NetworkManager</c>，沒有就 null。
@@ -54,12 +57,21 @@ namespace HtF.Guardian
 
         internal static void Tick()
         {
-            // 每幀都問沒有意義——ServerManager 只有開房／退房時會換。
+            // 每幀都問沒有意義——這些狀態換得很慢。
             float now = UnityEngine.Time.unscaledTime;
             if (now < _nextPoll) return;
             _nextPoll = now + 0.5f;
 
             NetworkManager nm = Manager();
+
+            Attach(nm);
+            WatchHosting(nm);
+            WatchIsland();
+        }
+
+        /// <summary>掛連線事件。實例換掉才需要重掛。</summary>
+        private static void Attach(NetworkManager nm)
+        {
             ServerManager next = nm != null ? nm.ServerManager : null;
             if (ReferenceEquals(next, _attached)) return;
 
@@ -68,12 +80,54 @@ namespace HtF.Guardian
 
             _attached = next;
             _attached.OnRemoteConnectionState += OnRemoteConnectionState;
-            // 換了一個伺服器實例＝換了一場遊戲，舊的統計沒有意義。
-            G.Reset();
+        }
+
+        /// <summary>
+        /// 開新的一場就把統計清掉。
+        ///
+        /// **判準是 <c>IsServerStarted</c> 的 false → true 邊緣，不是實例換掉。**
+        /// FishNet 的 <c>NetworkManager</c> 預設是 <c>DontDestroyOnLoad</c>
+        /// （<c>NetworkManager.cs:807</c>、<c>_dontDestroyOnLoad = true</c>），
+        /// <c>ServerManager</c> 掛在同一個物件上，所以它活過場景載入與退房——
+        /// 拿實例的參照去比，第一次之後就再也不會變，統計會把好幾場混在一起。
+        /// </summary>
+        private static void WatchHosting(NetworkManager nm)
+        {
+            bool hosting = false;
+            try { hosting = nm != null && nm.IsServerStarted; }
+            catch (Exception) { }
+
+            if (hosting && !_wasHosting)
+            {
+                G.Reset();
+                Prices.Invalidate();
+                _lastIsland = -1;
+            }
+            _wasHosting = hosting;
+        }
+
+        /// <summary>
+        /// 換島就讓價目表失效。
+        ///
+        /// <see cref="Prices"/> 的快取有 15 秒節流，而販賣點是**關卡物件**：
+        /// 不在換島時清掉的話，那 15 秒內兩個方向都會錯——教學島那個免費魚餌攤
+        /// 留下的 <c>0</c> 會讓 <c>cost = 0</c> 在新島上被放行（正好是要擋的洞），
+        /// 而新島比較貴的餌又會被當成價格不符、用舊島的價格改寫扣款。
+        /// </summary>
+        private static void WatchIsland()
+        {
+            int island;
+            try { island = OnlineIslandManager.CurIsland; }
+            catch (Exception) { return; }
+
+            if (island == _lastIsland) return;
+            _lastIsland = island;
+            Prices.Invalidate();
         }
 
         internal static void Detach()
         {
+            _wasHosting = false;
             if (_attached == null) return;
             try { _attached.OnRemoteConnectionState -= OnRemoteConnectionState; }
             catch (Exception) { }

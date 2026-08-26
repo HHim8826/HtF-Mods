@@ -64,6 +64,7 @@ namespace HtF.Guardian
 
         // 處置
         internal static ConfigEntry<int> ViolationLimit;
+        internal static ConfigEntry<float> ViolationDecay;
         internal static ConfigEntry<OnLimit> Action;
         internal static ConfigEntry<float> LogCooldown;
         internal static ConfigEntry<bool> AnnounceInChat;
@@ -182,6 +183,16 @@ namespace HtF.Guardian
                 "Run the action below once one connection reaches this many violations. 0 disables it. "
                 + "Leave headroom: latency alone produces the occasional false positive.",
                 new AcceptableValueRange<int>(0, 10000));
+            ViolationDecay = Loc.Bind(Config, "處置", "違規衰減秒數", 60f, "Violation Decay",
+                "乾淨玩這麼多秒就消掉一次違規。0 = 不衰減（計數變成「這輩子累計」）。"
+                + "有衰減，上面那個上限的意思才是「短時間內密集違規」——"
+                + "延遲造成的零星假違規會自己被吸收掉，不會累積幾小時之後把正常玩的人踢掉。",
+                "Forgive one violation for every this many seconds of clean play. 0 disables decay "
+                + "(the counter becomes a lifetime total). With decay the limit above means \"a burst of violations\" "
+                + "rather than a slow accumulation, so the occasional latency-induced false positive is absorbed "
+                + "instead of eventually kicking an innocent player.",
+                new AcceptableValueRange<float>(0f, 3600f));
+
             Action = Loc.Bind(Config, "處置", "超過時", OnLimit.只記錄, "Action",
                 "預設只記錄。先觀察一陣子面板上的數字，再決定要不要自動踢人。",
                 "Log only by default. Watch the panel for a while before letting it kick people automatically.");

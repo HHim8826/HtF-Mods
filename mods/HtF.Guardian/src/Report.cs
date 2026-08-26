@@ -118,6 +118,7 @@ namespace HtF.Guardian
                 o = new Offender { ClientId = id, SteamId = Sender.SteamIdOf(conn) };
                 Offenders[id] = o;
             }
+            Decay(o, now);
             o.Count++;
             o.LastWhy = why;
             o.LastRpc = rpc;
@@ -129,6 +130,26 @@ namespace HtF.Guardian
 
             MaybeLog(id, rpc, why, o, now);
             MaybePunish(conn, o);
+        }
+
+        /// <summary>
+        /// 乾淨玩一段時間就消掉一次違規。
+        ///
+        /// 沒有這一段的話，「違規上限 40」實際上是「這輩子 40 次」：計數只增不減，
+        /// 只有斷線或手動清除才會歸零。而設定說明自己就承認延遲會製造零星的假違規
+        /// ——那等於把餘裕**單調消耗**掉，一個完全正常的玩家連玩幾小時之後
+        /// 也會踩到上限。所以改成「每乾淨 N 秒抵掉一次」，
+        /// 讓上限的意思變成「短時間內密集違規」，那才是我們真正想抓的。
+        /// </summary>
+        private static void Decay(Offender o, float now)
+        {
+            if (o.Count <= 0 || o.LastTime <= 0f) return;
+
+            float per = Plugin.ViolationDecay != null ? Plugin.ViolationDecay.Value : 0f;
+            if (per <= 0f) return;
+
+            int forgiven = (int)((now - o.LastTime) / per);
+            if (forgiven > 0) o.Count = Mathf.Max(0, o.Count - forgiven);
         }
 
         private static void MaybeLog(int id, string rpc, Why why, Offender o, float now)
@@ -219,6 +240,7 @@ namespace HtF.Guardian
             LastLogged.Clear();
             Limiter.Clear();
             Speed.Clear();
+            Damagers.Clear();
             TotalBlocked = 0;
         }
     }

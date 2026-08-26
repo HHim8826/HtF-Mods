@@ -7,18 +7,18 @@ namespace HtF.AmmoCounter
     /// <summary>
     /// 畫剩餘子彈。
     ///
-    /// 全部用 <c>GUI.*</c> 的固定 Rect 畫，**沒有用到 GUILayout**——所以
-    /// `MODDING_CONTEXT.md` 第 4 節那條「結構變更要延到 Layout 事件」的規則
-    /// 在這裡不適用：那條講的是 GUILayout 會把 Layout 幀算出的結構拿去給
-    /// 後續事件用，固定 Rect 沒有那個狀態。這裡只在 Repaint 事件畫，
-    /// 因為沒有任何可互動的控件。
+    /// 全部用 <c>GUI.*</c> 的固定 Rect 畫，**沒有用到 GUILayout**——所以本專案
+    /// 其他 IMGUI mod 那條「結構變更要延到 Layout 事件」的規則在這裡不適用：
+    /// 那條講的是 GUILayout 會把 Layout 幀算出的控件樹拿去給後續事件用，
+    /// 固定 Rect 沒有那個狀態。這裡只在 Repaint 事件畫，因為沒有任何可互動的控件。
     /// </summary>
     internal static class AmmoHud
     {
         private static GUIStyle _big, _small;
         private static Texture2D _white;
         private static Font _font;
-        private static bool _fontTried, _stylesReady;
+        private static string _loadedFont;      // null = 還沒載過；"" = 載過且是「不指定字型」
+        private static bool _stylesReady;
 
         // Weapon._isReloading 是私有欄位，遊戲沒有公開的「正在裝填」查詢。
         // 拿不到就只是不顯示提示字，其餘照常。
@@ -111,12 +111,21 @@ namespace HtF.AmmoCounter
 
         // ------------------------------------------------------------------ 繪製
 
+        /// <summary>
+        /// 載字型。**字型名稱改了就重載並重建樣式**——設定是可以在遊戲中改的
+        /// （ConfigMenu、或直接編輯 .cfg），一個單向旗標會讓改動要重開遊戲才生效。
+        /// 比較的是名稱，所以沒改的時候不會有額外成本。
+        /// </summary>
         private static void EnsureFont()
         {
-            if (_fontTried) return;
-            _fontTried = true;
-            string name = Plugin.FontName.Value;
-            if (string.IsNullOrEmpty(name)) return;
+            string name = Plugin.FontName.Value ?? "";
+            if (_loadedFont == name) return;
+
+            _loadedFont = name;
+            _font = null;
+            _stylesReady = false;   // 樣式帶著舊字型，要一起重建
+
+            if (name.Length == 0) return;
             try { _font = Font.CreateDynamicFontFromOSFont(name, 24); }
             catch (Exception e) { Plugin.Log.LogWarning("載入字型 " + name + " 失敗：" + e.Message); }
         }
@@ -126,11 +135,15 @@ namespace HtF.AmmoCounter
             if (_stylesReady) return;
             _stylesReady = true;
 
-            _white = new Texture2D(1, 1, TextureFormat.RGBA32, false);
-            _white.SetPixel(0, 0, Color.white);
-            _white.filterMode = FilterMode.Point;
-            _white.hideFlags = HideFlags.HideAndDontSave;
-            _white.Apply();
+            // 樣式會因為換字型重建，貼圖不會——只建一次，不然每次換字型都漏一張。
+            if (!_white)
+            {
+                _white = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+                _white.SetPixel(0, 0, Color.white);
+                _white.filterMode = FilterMode.Point;
+                _white.hideFlags = HideFlags.HideAndDontSave;
+                _white.Apply();
+            }
 
             _big = new GUIStyle(GUI.skin.label)
             {
