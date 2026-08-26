@@ -13,7 +13,9 @@ namespace HtF.RadioMusic
     internal static class RadioPatcher
     {
         internal const string ApplyVolumeName = "ApplyVolume";
+        internal const string OnBossDeathName = "OnBossDeath";
 
+        private static MethodInfo _mApplyVolume;
         private static FieldInfo _fChannels, _fNoise, _fRadioVol, _fLocalFreq, _fChannelSource;
         private static FieldInfo _fStick, _fFreqMinMax;
         private static bool _resolved;
@@ -27,6 +29,56 @@ namespace HtF.RadioMusic
         {
             if (!Live.Contains(__instance)) Live.Add(__instance);
             ApplyClips(__instance);
+        }
+
+        /// <summary>
+        /// **Boss 被打死之後把音量算回來。**
+        ///
+        /// 這是遊戲自己的 bug，而且兩條收尾路徑不一致：
+        ///
+        /// ```csharp
+        /// // BossManager.OnBossDeath（BossManager.cs:239-252）
+        /// onGlobalBossDeath();          // ← 事件先發
+        /// ...
+        /// BossManager.Boss = null;      // ← Boss 之後才清掉
+        ///
+        /// // BossManager.OnBossDespawn（BossManager.cs:300-301）
+        /// BossManager.Boss = null;      // ← 這條是先清
+        /// onGlobalBossDespawn();
+        /// ```
+        ///
+        /// `Radio` 把 `ApplyVolume` 掛在 `OnGlobalBossDeath` / `OnGlobalBossDespawn`
+        /// 上（`Radio.cs:240-242`），而 `ApplyVolume` 開頭是
+        /// `if (BossManager.Boss) { 全部靜音; return; }`。死亡那條路徑觸發時
+        /// `Boss` 還在，所以它**又靜音一次就 return**——而且之後沒有任何東西
+        /// 會再呼叫 `ApplyVolume`，收音機就永遠不會再響。
+        /// 消失（despawn）那條因為先清 `Boss`，反而是正常的。
+        ///
+        /// 修法：掛在 `OnBossDeath` 的 postfix。方法回傳時 `Boss` 已經是 null 了，
+        /// 這時候再呼叫一次遊戲自己的 `ApplyVolume` 就好——那正是 despawn 路徑
+        /// 做的事，所以行為完全一致，不需要自己重算。
+        /// </summary>
+        [HarmonyPatch(typeof(BossManager), OnBossDeathName)]
+        [HarmonyPostfix]
+        private static void BossManager_OnBossDeath_Postfix()
+        {
+            // 早退的情況（_instance 或 Boss 是 null）postfix 一樣會跑，
+            // 但那時候本來就沒有靜音發生，再算一次也只是把同樣的值寫回去。
+            RefreshAll();
+        }
+
+        /// <summary>對場上每一台收音機重新套用一次遊戲自己的音量計算。</summary>
+        private static void RefreshAll()
+        {
+            if (_mApplyVolume == null) _mApplyVolume = AccessTools.Method(typeof(Radio), ApplyVolumeName);
+            if (_mApplyVolume == null) return;
+
+            Live.RemoveAll(r => !r);
+            for (int i = 0; i < Live.Count; i++)
+            {
+                try { _mApplyVolume.Invoke(Live[i], null); }
+                catch (Exception e) { Plugin.Log.LogWarning("Boss 結束後重算收音機音量失敗：" + e.Message); }
+            }
         }
 
         /// <summary>
@@ -234,6 +286,10 @@ namespace HtF.RadioMusic
         {
             if (AccessTools.Method(typeof(Radio), ApplyVolumeName) == null)
                 Plugin.Log.LogWarning("Radio." + ApplyVolumeName + " 不存在了（遊戲更新？）——雜訊與音量設定不會生效。");
+
+            if (AccessTools.Method(typeof(BossManager), OnBossDeathName) == null)
+                Plugin.Log.LogWarning("BossManager." + OnBossDeathName
+                    + " 不存在了（遊戲更新？）——Boss 被打死之後收音機不會自己恢復。");
         }
     }
 }
