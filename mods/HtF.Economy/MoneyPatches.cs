@@ -1,3 +1,4 @@
+using System;
 using HarmonyLib;
 using UnityEngine;
 
@@ -44,6 +45,12 @@ namespace HtF.Economy
         /// 新建存檔時的起始金錢。
         /// MoneyManager.OnStartServer 是從 SaveManager.CurServerSave.Money 讀初始值的，
         /// 而 CreateServer 正好在最後把新的存檔物件指派給 CurServerSave，所以接在它後面。
+        ///
+        /// **改完記憶體還要再寫一次磁碟。** CreateServer 自己在方法內就已經把
+        /// `Money = 0` 的物件序列化寫進存檔檔案了（`SaveManager.cs:80-82`），
+        /// postfix 是在那之後才跑的——只改 `CurServerSave.Money` 的話，磁碟上那份
+        /// 仍然是 0。房主開完新遊戲、在下一次自動存檔之前當掉或關掉遊戲，
+        /// 起始金錢就這樣沒了。所以照著 CreateServer 的最後兩行再做一次。
         /// </summary>
         [HarmonyPatch(typeof(SaveManager), nameof(SaveManager.CreateServer))]
         [HarmonyPostfix]
@@ -54,7 +61,21 @@ namespace HtF.Economy
             if (SaveManager.CurServerSave == null) return;
 
             SaveManager.CurServerSave.Money = start;
-            Plugin.Log.LogInfo("新存檔起始金錢設為 " + start + "。");
+
+            try
+            {
+                SaveSystem.SaveServer(SaveManager.CurServerSave.Name,
+                                      JsonUtility.ToJson(SaveManager.CurServerSave));
+                Plugin.Log.LogInfo("新存檔起始金錢設為 " + start + "（已寫回磁碟）。");
+            }
+            catch (Exception e)
+            {
+                // 寫不進去也不要讓建立存檔失敗：記憶體裡的值是對的，
+                // 下一次自動存檔就會補上，只是中間當掉會掉回 0。
+                Plugin.Log.LogWarning("新存檔起始金錢設為 " + start
+                    + "，但寫回磁碟失敗：" + e.Message
+                    + "。下一次存檔才會落地。");
+            }
         }
     }
 }

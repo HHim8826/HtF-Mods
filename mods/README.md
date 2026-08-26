@@ -220,6 +220,8 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
   （商店、口袋、魚餌、馬達、配件、子彈與銳利度升級、賭注）最後都走這裡。
 - **新存檔起始金錢** → `SaveManager.CreateServer` 之後設 `CurServerSave.Money`，
   因為 `MoneyManager.OnStartServer` 正是從那裡讀初始值。只影響之後新建的存檔。
+  設完會**再寫一次磁碟**：`CreateServer` 在方法內就已經把 `Money = 0` 的版本
+  存進檔案了，不補這一次，開完新遊戲後在第一次自動存檔前當掉就會掉回 0。
 
 ⚠ 花費倍率有個已知的不一致：商店 UI 顯示的仍是原價，「買不買得起」也用原價判斷，
 只有實際扣款會乘上倍率（扣到 0 為止，不會變負數）。這是因為價格顯示散落在各個
