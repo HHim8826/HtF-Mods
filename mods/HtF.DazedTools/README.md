@@ -222,6 +222,6 @@ but has **not** been run yet is the batch of review fixes:
 
 ## Links
 
-- [Source, and the other seven HtF mods](https://github.com/HHim8826/HtF-Mods)
+- [Source, and the other six HtF mods](https://github.com/HHim8826/HtF-Mods)
 - [Changelog](https://github.com/HHim8826/HtF-Mods/blob/main/mods/HtF.DazedTools/CHANGELOG.md)
 - MIT licensed

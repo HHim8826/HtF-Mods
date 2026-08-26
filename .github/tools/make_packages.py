@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""把八個 mod 打包成可以直接上傳 Thunderstore 的 zip。
+"""把七個 mod 打包成可以直接上傳 Thunderstore 的 zip。
 
     python .github/tools/make_packages.py                     # 建置 + 打包全部
     python .github/tools/make_packages.py --no-build          # 只打包（DLL 要已經建好）
-    python .github/tools/make_packages.py --only HtF.Economy  # 只做一個
+    python .github/tools/make_packages.py --only HtF.Guardian # 只做一個
     python .github/tools/make_packages.py --game-managed "D:\\...\\Managed"
 
 產出在 `dist/`：
@@ -70,6 +70,35 @@ def find_dll(mod, folder):
     return max(hits, key=os.path.getmtime)
 
 
+def newest_source_mtime(mod, folder):
+    """這個 mod 的所有輸入裡最新的修改時間。共用的 Shared/ 與 Common.props 也算。"""
+    paths = [os.path.join(folder, mod + ".csproj"),
+             os.path.join(MODS, "Common.props")]
+    paths += glob.glob(os.path.join(folder, "**", "*.cs"), recursive=True)
+    paths += glob.glob(os.path.join(MODS, "Shared", "*.cs"))
+    newest = 0.0
+    for p in paths:
+        if os.sep + "obj" + os.sep in p or os.sep + "bin" + os.sep in p:
+            continue
+        try:
+            newest = max(newest, os.path.getmtime(p))
+        except OSError:
+            pass
+    return newest
+
+
+def dll_is_stale(mod, folder, dll):
+    """
+    `--no-build` 用現成的 DLL，但「現成」不代表「是這個版本的」。
+
+    典型的踩法：把 .csproj 的 <Version> 從 1.0.0 改成 1.1.0，忘了重建，
+    然後 --no-build。manifest 對得上 csproj（check_repo 過），zip 的檔名也是
+    1.1.0，但裡面那顆 DLL 還是 1.0.0 的。送上 Thunderstore 之後那個版本號就
+    用掉了——這正是整個 repo 最不想發生的那件事，所以在這裡擋。
+    """
+    return os.path.getmtime(dll) < newest_source_mtime(mod, folder)
+
+
 def build(mod, folder, args):
     cmd = ["dotnet", "build", os.path.join(folder, mod + ".csproj"),
            "-c", "Release", "--nologo"]
@@ -99,6 +128,12 @@ def pack(mod, folder, out_dir):
               "拿掉 --no-build，或先自己建置一次。" % mod)
         return None
 
+    if dll_is_stale(mod, folder, dll):
+        print("::error::%s 的 DLL 比原始碼舊（%s）。--no-build 會把這顆舊的包進 "
+              "%s-%s.zip，而版本號一旦送上 Thunderstore 就用掉了。"
+              "拿掉 --no-build 重建一次。" % (mod, os.path.basename(dll), pkg, version))
+        return None
+
     zip_path = os.path.join(out_dir, "%s-%s.zip" % (pkg, version))
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         for f in ROOT_FILES:
@@ -118,9 +153,9 @@ def pack(mod, folder, out_dir):
 def write_notes(packed, out_dir):
     lines = [
         u"上傳到 [Thunderstore（how-to-fish）]"
-        u"(https://thunderstore.io/c/how-to-fish/) 的八個套件。",
+        u"(https://thunderstore.io/c/how-to-fish/) 的七個套件。",
         u"",
-        u"Eight packages for *How to Fish*. Each zip is ready to upload to Thunderstore as-is;",
+        u"Seven packages for *How to Fish*. Each zip is ready to upload to Thunderstore as-is;",
         u"to install by hand, unzip the `BepInEx/` folder into your game directory.",
         u"",
         u"| 套件 Package | 版本 Version | 檔案 File |",
@@ -138,6 +173,22 @@ def write_notes(packed, out_dir):
     path = os.path.join(out_dir, "RELEASE_NOTES.md")
     io.open(path, "w", encoding="utf-8", newline="\n").write(u"\n".join(lines))
     print("  RELEASE_NOTES.md")
+
+
+def unexpected_entries(out_dir):
+    """
+    `shutil.rmtree(args.out)` 遞迴刪除，而 --out 是命令列給的。
+    `--out .` 或 `--out mods` 打錯一次就沒了，所以先確認裡面**只有**這支腳本
+    自己產生的東西：zip、RELEASE_NOTES.md、暫存的 .build-deploy。
+    有別的就拒絕動手。
+    """
+    allowed_names = {"RELEASE_NOTES.md", ".build-deploy"}
+    bad = []
+    for name in sorted(os.listdir(out_dir)):
+        if name in allowed_names or name.endswith(".zip"):
+            continue
+        bad.append(name)
+    return bad
 
 
 def main():
@@ -165,13 +216,19 @@ def main():
             return 1
         mods = {m: mods[m] for m in args.only}
 
-    # 只有整批打包才清空。--only 時清掉會把上一輪其他七個 zip 一起帶走，
+    # 只有整批打包才清空。--only 時清掉會把上一輪其他六個 zip 一起帶走，
     # 而「只重包一個」正是最常用 --only 的場合。
     if args.only:
         if not os.path.isdir(args.out):
             os.makedirs(args.out)
     else:
         if os.path.isdir(args.out):
+            unexpected = unexpected_entries(args.out)
+            if unexpected:
+                print("::error::%s 裡有不是這支腳本產生的東西（%s），不敢清空。"
+                      "--out 指到別的地方，或自己先確認過再刪。"
+                      % (args.out, "、".join(unexpected[:5])))
+                return 1
             shutil.rmtree(args.out)
         os.makedirs(args.out)
 
@@ -195,7 +252,7 @@ def main():
         return 1
 
     # --only 時不寫發布說明：它列的會是「這次包的那一個」，而 dist/ 裡通常
-    # 還躺著上一輪的另外七個，寫出去只會誤導。
+    # 還躺著上一輪的另外六個，寫出去只會誤導。
     if args.only:
         print("\n%d 個套件打包完成（--only，RELEASE_NOTES.md 沒有更新）。" % len(packed))
     else:

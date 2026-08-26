@@ -98,6 +98,6 @@ patch 目標在啟動時會驗證一次，遊戲改版把它們搬走的話會�
 
 ## 連結
 
-- [原始碼，以及另外七個 HtF mod](https://github.com/HHim8826/HtF-Mods)
+- [原始碼，以及另外六個 HtF mod](https://github.com/HHim8826/HtF-Mods)
 - [更新記錄](https://github.com/HHim8826/HtF-Mods/blob/main/mods/HtF.RadioMusic/CHANGELOG.md)
 - MIT 授權

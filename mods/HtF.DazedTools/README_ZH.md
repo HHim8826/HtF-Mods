@@ -190,6 +190,6 @@ IMGUI 的層級、字型載入、`PlayerCamera.ToggleMouse` 這三項當初的�
 
 ## 連結
 
-- [原始碼，以及另外七個 HtF mod](https://github.com/HHim8826/HtF-Mods)
+- [原始碼，以及另外六個 HtF mod](https://github.com/HHim8826/HtF-Mods)
 - [更新記錄](https://github.com/HHim8826/HtF-Mods/blob/main/mods/HtF.DazedTools/CHANGELOG.md)
 - MIT 授權

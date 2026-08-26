@@ -2,6 +2,29 @@
 
 All notable changes to this package. Versions follow [semantic versioning](https://semver.org/).
 
+## 1.1.0
+
+- Absorbed the fishing half of `HtF.Economy`: catch weights (rare / common / boss multipliers,
+  rare threshold), per-item multipliers, the pity counter, and the bite time multiplier.
+  They were never really "economy" — they are rules the host sets for the whole lobby, and they
+  take effect in exactly the same place as the difficulty multipliers already here.
+- **`HtF.Economy` is gone.** Its money half — sell price multiplier, cost multiplier and starting
+  money for new saves — was **removed**, not moved.
+- **If `HtF.Economy` or `HtF.FishingEcology` is still installed, delete it.** All three patch
+  `CreatureManager.GetRandomItem` the same way, so two of them loaded at once make the multipliers
+  compound, with no error to tell you.
+  When one is detected this mod **disables its own fishing half** and says so in the log, so the
+  multipliers cannot compound while you sort it out. Difficulty, rules and player stats keep working.
+- Fishing settings do not carry over from `htf.economy.cfg` — the plugin GUID is different, so
+  BepInEx writes a fresh file. The setting names are unchanged, so they are quick to re-enter.
+- Fixed: turning `Enable Fishing Ecology` off left the bite time multiplier written into the
+  `BaitInfo` asset, and re-applied it on the way out. Fish kept biting faster until you quit the
+  game. The toggle now restores the vanilla values.
+- Fixed: when the weight table could not be built (empty table, field names not matching, all
+  weights zero), the pity counter still compared the result against the *previous* roll's rare set,
+  so rare detection and the pity streak were both wrong. Those rolls are now skipped.
+- Changing any setting no longer rewrites every bait asset — only the two settings that actually
+  touch it do.
 
 ## 1.0.0
 

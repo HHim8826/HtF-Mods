@@ -4,7 +4,7 @@ using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 
-namespace HtF.Economy
+namespace HtF.HostRules
 {
     /// <summary>
     /// 咬鉤時間。
@@ -30,10 +30,17 @@ namespace HtF.Economy
         private static bool _applied;
         private static readonly Dictionary<BaitInfo, Vector2> Originals = new Dictionary<BaitInfo, Vector2>();
 
-        /// <summary>每幀輕量檢查：魚餌表載入後套用一次。</summary>
+        /// <summary>
+        /// 每幀輕量檢查：魚餌表載入後套用一次。
+        ///
+        /// 用 <see cref="_applied"/> 當閘門是安全的：<c>GameInfo._allBaits</c> 是
+        /// <c>GameInfo.Awake</c> 用 <c>Resources.LoadAll&lt;BaitInfo&gt;("Baits")</c> 填一次的
+        /// static 清單，從來不 clear，裡面是整個行程共用的同一批 ScriptableObject 資產。
+        /// 回主選單、換存檔都不會產生新的 BaitInfo 實例，所以套過一次就不需要再套。
+        /// </summary>
         internal static void TickTryApply()
         {
-            if (_applied) return;
+            if (_applied || !Enabled) return;
             try
             {
                 if (GameInfo.AllBaits == null || GameInfo.AllBaits.Count == 0) return;
@@ -43,10 +50,30 @@ namespace HtF.Economy
             Apply();
         }
 
+        /// <summary>「啟用釣魚生態」關掉、或偵測到舊 mod 衝突時，這一半也要停。</summary>
+        private static bool Enabled
+        {
+            get
+            {
+                return !Plugin.FishingDisabledByConflict
+                       && Plugin.FishingEnabled != null && Plugin.FishingEnabled.Value;
+            }
+        }
+
         internal static void Apply()
         {
             Resolve();
             if (_field == null) return;
+
+            // 關掉「啟用釣魚生態」時要**還原**，不是放著不管。
+            // 少了這一行，關掉之後 BaitInfo 上被寫進去的倍率會留著，
+            // 而且 Config.SettingChanged 會在關掉的當下再套一次——
+            // 使用者以為退回原生了，魚其實照樣咬得比原生快。
+            if (!Enabled)
+            {
+                Restore();
+                return;
+            }
 
             IReadOnlyList<BaitInfo> baits;
             try
