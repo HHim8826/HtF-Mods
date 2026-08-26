@@ -240,11 +240,14 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
   權重 ≤ 該表最大權重 × 門檻（預設 0.25）的就算稀有。可分別調稀有／常見／Boss 倍率。
 - **個別倍率**：`tuna=5, giantpiranha=0.2` 這種格式，名稱用去空格全小寫（跟 `/spawn` 一樣），
   會覆蓋上面的分類倍率。
-- **保底**：連續 N 次抽到非稀有後，下一次只從稀有項抽。計數全房共用。
+- **保底**：連續 N 次抽到非稀有後，下一次只從稀有項抽。計數全房共用，
+  而且是 process 級的——換存檔、重開房間都不會歸零，要關掉遊戲才會。
 - **咬鉤時間倍率**：改 `BaitInfo._catchTimeMinMax` 資產。唯一讀 `Bait.RandomizedCatchTime`
   的地方是 `CreatureManager.FindFishForBait`（`CreatureManager.cs:111`），只從 `TickUpdate`
   進得去，而 `TickUpdate` 只在 `OnStartServer` 掛上 `TimeManager.OnPostTick`。
-  有做原值快照，倍率一律從快照算，退出時還原。
+  有做原值快照，倍率一律從快照算，**關掉「啟用釣魚生態」或退出時還原**。
+  它走的是資產寫入而不是 patch，所以那個開關要在 `BaitTuner` 裡自己判——
+  漏掉的話關掉開關只會停掉權重，咬鉤時間的倍率會留在資產上。
 
 `除錯 / 記錄每次抽取` 打開後會把抽到什麼寫進 log，調倍率時很有用。
 `釣魚 / 啟用釣魚生態` 關掉就完全走原本的權重，不影響上面的難度與玩家數值。

@@ -60,7 +60,18 @@ namespace HtF.HostRules
         internal static ConfigEntry<float> CatchTimeMultiplier;
         internal static ConfigEntry<bool> LogRolls;
 
+        /// <summary>
+        /// 偵測到舊的釣魚 mod 時立起來，釣魚那半整個停掉。見 <see cref="CheckForOldMods"/>。
+        /// </summary>
+        internal static bool FishingDisabledByConflict;
+
         private Harmony _harmony;
+
+        /// <summary>
+        /// 釣魚那半用**獨立的 Harmony id**，這樣偵測到衝突時才撤得掉，
+        /// 又不會連帶把難度與規則的 patch 一起拆了。
+        /// </summary>
+        private Harmony _fishingHarmony;
 
         private void Awake()
         {
@@ -154,17 +165,25 @@ namespace HtF.HostRules
 
             BindFishing();
 
-            // 改設定後立刻套用，不用重開房間
+            // 改設定後立刻套用，不用重開房間。
+            //
+            // 要分流：BaitTuner.Apply() 是用反射對**每一種魚餌**寫一次資產，
+            // 不分流的話改「友軍傷害」也會掃一次全魚餌，還多印一行 log。
+            // 其餘釣魚設定（權重、保底）是抽魚當下才讀的，不需要預先套用。
             Config.SettingChanged += (s, e) =>
             {
-                RuleApplier.ApplyAll();
-                BaitTuner.Apply();
+                if (e.ChangedSetting == CatchTimeMultiplier || e.ChangedSetting == FishingEnabled)
+                    BaitTuner.Apply();
+                else
+                    RuleApplier.ApplyAll();
             };
 
             _harmony = new Harmony(Guid);
             _harmony.PatchAll(typeof(Patches));
-            _harmony.PatchAll(typeof(FishingPatches));
             Patches.VerifyTargets();
+
+            _fishingHarmony = new Harmony(Guid + ".fishing");
+            _fishingHarmony.PatchAll(typeof(FishingPatches));
 
             Log.LogInfo("Host Rules 已載入（釣魚生態 " + (FishingEnabled.Value ? "開" : "關") + "）。");
         }
@@ -215,14 +234,18 @@ namespace HtF.HostRules
 
             PityAfter = Loc.Bind(Config, "釣魚", "連續幾次沒稀有就保底", 0, "Pity After N Non-Rare Rolls",
                 "0 = 關閉。設 N 表示連續 N 次抽到非稀有後，下一次只從稀有項目裡抽。\n"
-                + "計數是全房共用的，不是每個玩家各自計算。",
+                + "計數是全房共用的，不是每個玩家各自計算；換存檔、重開房間都不會歸零，"
+                + "要關掉遊戲才會。",
                 "0 = off. Set N so that after N non-rare rolls in a row, the next roll draws only from the rare items.\n"
-                + "The counter is shared by the whole lobby, not tracked per player.",
+                + "The counter is shared by the whole lobby rather than tracked per player, and it is not "
+                + "reset when you load another save or start a new lobby - only when you quit the game.",
                 new AcceptableValueRange<int>(0, 100));
 
             CatchTimeMultiplier = Loc.Bind(Config, "釣魚", "咬鉤時間倍率", 1.0f, "Bite Time Multiplier",
-                "小於 1 = 魚咬鉤更快。這一項是改 BaitInfo 資產（離開遊戲時會還原）。",
-                "Below 1 = fish bite sooner. This one edits the BaitInfo asset (restored when you quit).",
+                "小於 1 = 魚咬鉤更快。這一項是改 BaitInfo 資產，"
+                + "關掉上面的「啟用釣魚生態」或離開遊戲時都會還原。",
+                "Below 1 = fish bite sooner. This one edits the BaitInfo asset; it is restored both when "
+                + "you turn off Enable Fishing Ecology above and when you quit.",
                 new AcceptableValueRange<float>(0.05f, 10f));
 
             LogRolls = Loc.Bind(Config, "除錯", "記錄每次抽取", false, "Log Every Roll",
@@ -239,33 +262,54 @@ namespace HtF.HostRules
         }
 
         /// <summary>
-        /// 舊的 <c>HtF.Economy</c> 或 <c>HtF.FishingEcology</c> 還在的話大聲說一次。
+        /// 舊的 <c>HtF.Economy</c> 或 <c>HtF.FishingEcology</c> 還在的話，**把釣魚那半整個撤掉**。
         ///
         /// 三者都會 patch <c>CreatureManager.GetRandomItem</c>，而且都是把 <c>ref weights</c>
-        /// 換成自己算的副本——同時載入時倍率等於**疊乘**，而且沒有任何錯誤訊息。
-        /// 這正是 GUID 改名／搬家時最容易踩的坑：使用者裝了新版但沒刪舊資料夾。
+        /// 換成自己算的副本——同時載入時倍率等於**疊乘**。咬鉤時間更糟：兩邊各自對
+        /// <c>BaitInfo._catchTimeMinMax</c> 做快照再乘，後套用的那個會把**已經被改過的值**
+        /// 當成原值存起來，於是連 <see cref="BaitTuner.Restore"/> 都還原不回去。
+        /// 兩種情況都不會有任何錯誤訊息。
+        ///
+        /// 早期版本只在這裡寫一行 warning 就繼續套用，等於把「要不要壞掉」丟給使用者
+        /// 有沒有讀 log 決定。現在改成 fail-safe：撤掉自己這一份，把場面讓給舊的那個，
+        /// 至少不會疊乘。使用者刪掉舊資料夾重開遊戲就恢復正常。
         ///
         /// **在 Update 而不是 Awake 檢查**：BepInEx 是邊載入邊往
         /// <c>Chainloader.PluginInfos</c> 填的，Awake 當下對方可能還沒進去。
-        /// 等到第一個 Update，所有插件都載完了。
+        /// 等到第一個 Update，所有插件都載完了——而釣魚要進遊戲才會發生，
+        /// 這中間的一幀不可能抽到魚。
         /// </summary>
         private void CheckForOldMods()
         {
             _checkedForOldMods = true;
+
+            string found = null;
             for (int i = 0; i < OldFishingGuids.Length; i++)
             {
-                string guid = OldFishingGuids[i];
-                if (!Chainloader.PluginInfos.ContainsKey(guid)) continue;
-
-                Log.LogWarning("偵測到舊的 " + guid + " 還裝著。釣魚生態已經併進這個 mod，"
-                               + "兩份同時載入會讓抽魚權重被套用兩次（倍率變成疊乘）。"
-                               + "請把它的 BepInEx/plugins 資料夾整個刪掉。");
+                if (!Chainloader.PluginInfos.ContainsKey(OldFishingGuids[i])) continue;
+                found = found == null ? OldFishingGuids[i] : found + "、" + OldFishingGuids[i];
             }
+            if (found == null) return;
+
+            FishingDisabledByConflict = true;
+            BaitTuner.Restore();
+            if (_fishingHarmony != null)
+            {
+                _fishingHarmony.UnpatchSelf();
+                _fishingHarmony = null;
+            }
+
+            Log.LogError("偵測到舊的 " + found + " 還裝著。釣魚生態已經併進這個 mod，"
+                         + "兩份同時載入會讓抽魚權重與咬鉤時間被套用兩次（倍率疊乘）。"
+                         + "為了不弄壞你的存檔，這個 mod 的釣魚功能**已自動停用**"
+                         + "（難度、規則、玩家數值不受影響）。"
+                         + "請把舊的 BepInEx/plugins 資料夾整個刪掉再重開遊戲。");
         }
 
         private void OnDestroy()
         {
             BaitTuner.Restore();
+            if (_fishingHarmony != null) _fishingHarmony.UnpatchSelf();
             if (_harmony != null) _harmony.UnpatchSelf();
         }
     }

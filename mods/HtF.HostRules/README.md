@@ -28,8 +28,14 @@ same place as the difficulty multipliers — so having them in a second mod only
 settings pages to tune one thing.
 
 **If `HtF.Economy` or `HtF.FishingEcology` is still installed, delete it.** All three patch
-`CreatureManager.GetRandomItem` the same way, so two of them loaded at once make the multipliers
-compound, with no error to tell you. This mod writes a warning to the BepInEx log if it spots one.
+`CreatureManager.GetRandomItem` the same way, and two of them loaded at once make the multipliers
+compound. The bite time is worse: each side snapshots `BaitInfo._catchTimeMinMax` and multiplies, so
+whichever applies second records the *already modified* value as the original and can no longer put
+it back. Neither produces an error.
+
+When this mod spots one, it **disables its own fishing half** and says so in the log, so nothing can
+compound while you sort it out. Difficulty, rules and player stats keep working. Delete the old
+plugin folder and restart the game to get fishing back.
 
 `HtF.Economy`'s money half — sell price multiplier, cost multiplier, starting money for new saves —
 was **removed**, not moved. If you were using those, this release drops them.
@@ -85,8 +91,8 @@ actually means.
 | Common Multiplier | 1.0 | Lowering this raises rare fish relative to everything else |
 | Boss Multiplier | 1.0 | Weight of boss creatures. The game's own "only one boss alive" rule is untouched |
 | Per-Item Multipliers | *empty* | `name=multiplier`, comma separated, lowercase with spaces removed — e.g. `tuna=5, giantpiranha=0.2`. Overrides the three above |
-| Pity After N Non-Rare Rolls | 0 | 0 = off. After N non-rare rolls in a row, the next draws only from the rare items. The counter is shared by the whole lobby |
-| Bite Time Multiplier | 1.0 | Below 1 = fish bite sooner. Edits the `BaitInfo` asset, restored when you quit |
+| Pity After N Non-Rare Rolls | 0 | 0 = off. After N non-rare rolls in a row, the next draws only from the rare items. The counter is shared by the whole lobby, and survives loading another save — only quitting resets it |
+| Bite Time Multiplier | 1.0 | Below 1 = fish bite sooner. Edits the `BaitInfo` asset; restored when you turn Enable Fishing Ecology off, and when you quit |
 
 ### Debug
 

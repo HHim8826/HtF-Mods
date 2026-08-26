@@ -27,6 +27,12 @@ namespace HtF.HostRules
         internal static readonly HashSet<Fishable> LastRareSet = new HashSet<Fishable>();
         internal static int MissStreak;
 
+        /// <summary>
+        /// 上一次 <see cref="Build"/> 有沒有真的算出稀有名單。postfix 靠它決定要不要
+        /// 記保底——沒算出來就沒有稀有度可判，硬記只會用到過期的名單。
+        /// </summary>
+        internal static bool LastBuildValid;
+
         internal static bool Ready
         {
             get
@@ -39,6 +45,11 @@ namespace HtF.HostRules
         /// <summary>回傳調整後的新表；沒有任何調整或資料不合理時回傳 null（代表照原樣跑）。</summary>
         internal static List<ItemInfoWeight> Build(List<ItemInfoWeight> original)
         {
+            // **第一件事就是作廢上一輪的稀有名單。** 下面三條 early return 走在
+            // LastRareSet.Clear() 前面，走到時 prefix 不換表，但 postfix 仍然會拿
+            // __result 去比對**上一次**留下的名單——稀有判定錯，保底計數跟著歪。
+            LastBuildValid = false;
+
             if (original == null || original.Count == 0) return null;
             if (!Ready) return null;
 
@@ -78,6 +89,8 @@ namespace HtF.HostRules
                 total += w;
                 if (isRare) { rareOnly.Add(entry); rareTotal += w; }
             }
+
+            LastBuildValid = true;
 
             // 保底：連續槓龜夠多次就只留稀有項
             int pity = Plugin.PityAfter.Value;

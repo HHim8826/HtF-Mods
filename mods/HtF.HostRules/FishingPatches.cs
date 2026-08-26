@@ -32,6 +32,10 @@ namespace HtF.HostRules
         {
             if (!Plugin.FishingEnabled.Value) return;
 
+            // prefix 那一輪沒算出稀有名單（表是空的、欄位對不上、權重全是 0）就別記——
+            // LastRareSet 這時候是空的，硬記等於把每一次都算成非稀有。
+            if (!WeightTable.LastBuildValid) return;
+
             bool rare = __result != null && WeightTable.LastRareSet.Contains(__result);
             if (rare) WeightTable.MissStreak = 0;
             else WeightTable.MissStreak++;
