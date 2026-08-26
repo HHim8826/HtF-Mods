@@ -66,6 +66,28 @@ namespace HtF.Guardian
             return Sender.Owns(owner);
         }
 
+        /// <summary>
+        /// 這個物品目前的物理模擬權在發送端手上嗎。
+        ///
+        /// 有些 RPC 的合法送出點閘門是**模擬者**而不是持有者
+        /// （例：<c>MainLava.ItemTouchedLava</c> 看的是 <c>RigidbodySync.IsSimulatedLocal</c>）
+        /// ——丟進岩漿的東西沒有人拿著。<c>SyncedSimulator</c> 是 SyncVar，
+        /// 伺服器端是對的；而 <c>RigidbodySync.StartSimulateLocal</c> 是**先**送
+        /// <c>SetSyncedSimulator</c> 才 <c>ToggleSimulation(true)</c>，
+        /// 兩條 RPC 又都是 Reliable 同序，所以不會有「已在本機模擬但伺服器還不知道」的空窗。
+        /// </summary>
+        private static bool SimulatedBySender(Item item)
+        {
+            if (!item) return false;
+            try
+            {
+                RigidbodySync sync = item.RigidbodySync;
+                if (sync && Sender.Same(sync.SyncedSimulator, Sender.Current)) return true;
+            }
+            catch (Exception) { /* 沒有 RigidbodySync 就退回持有者判斷 */ }
+            return HeldBySender(item);
+        }
+
         private static bool Finite(Vector3 v)
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z)
@@ -352,20 +374,41 @@ namespace HtF.Guardian
             return true;
         }
 
-        internal static bool SetItemMultiplier(ref float __1)
+        internal static bool SetItemMultiplier(Item __0, ref float __1)
         {
             if (Sender.Exempt) return true;
             if (!G.Rate("SetItemMultiplier", 20f)) return false;
+
+            // 只夾數值是不夠的：目標物品也是客戶端指定的，光有上限還是能對場上
+            // 任何值錢的東西設一個倍率。唯一的合法送出點是 Creature.LocalHit
+            // （Creature.cs:397）——擊殺者的客戶端替**剛死的那隻生物**設倍率，
+            // 而且它在 HitCreature 之後才送（兩條都是 Reliable 同序），
+            // 所以守衛跑到這裡時 Hp 已經歸零、IsDead 為 true。
+            //
+            // 遊戲另外有一道 `if (_killScoreMultiplier.Value != 1f) return;`
+            // （Item.cs:893），一個物品只能設一次，所以這裡擋掉「非生物目標」
+            // 之後，剩下的攻擊面只有「搶在擊殺者之前對某隻死掉的生物設值」。
+            if (Id)
+            {
+                Creature creature = __0 ? __0.Creature : null;
+                if (!creature || !creature.IsDead) return G.Deny("SetItemMultiplier", Why.目標無效);
+            }
+
             if (!Val) return true;
             if (!Finite(__1) || __1 < 0f || __1 > Plugin.MaxScoreMultiplier.Value)
                 return G.Deny("SetItemMultiplier", Why.數值超出範圍);
             return true;
         }
 
-        internal static bool GrillItemInLava()
+        internal static bool GrillItemInLava(Item __0)
         {
             if (Sender.Exempt) return true;
-            return G.Rate("GrillItemInLava", 30f);
+            if (!G.Rate("GrillItemInLava", 30f)) return false;
+            // 驗的是模擬者而不是持有者：MainLava.ItemTouchedLava 的閘門就是
+            // `item.RigidbodySync.IsSimulatedLocal`（MainLava.cs:96），
+            // 丟進岩漿的東西沒有人拿著，用 HeldBySender 會把正常的燒烤全擋掉。
+            if (Id && !SimulatedBySender(__0)) return G.Deny("GrillItemInLava", Why.不是模擬者);
+            return true;
         }
 
         internal static bool PlayImpactSound()

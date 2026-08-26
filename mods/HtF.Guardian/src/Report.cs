@@ -13,6 +13,7 @@ namespace HtF.Guardian
     {
         身分不符,
         不是持有者,
+        不是模擬者,
         不是駕駛,
         數值超出範圍,
         移動過快,
@@ -54,7 +55,8 @@ namespace HtF.Guardian
     ///
     /// **每個公開方法都不能丟例外。** 它們是在 <c>RpcLogic___*</c> 的 prefix 裡跑的，
     /// 而 FishNet 把「RPC 執行期間丟例外」當成惡意封包，會直接踢掉發送者
-    /// （見 `AI_CONTEXT.md` 第 3 節）。一個守衛自己的 bug 不該變成踢人。
+    /// （<c>ServerManager.cs:1111-1119</c> 的 <c>Kick(KickReason.MalformedData)</c>）。
+    /// 一個守衛自己的 bug 不該變成踢人。
     /// </summary>
     internal static class G
     {

@@ -101,6 +101,7 @@ namespace HtF.Guardian
             {
                 case Why.身分不符: return "Wrong actor";
                 case Why.不是持有者: return "Not the holder";
+                case Why.不是模擬者: return "Not the simulator";
                 case Why.不是駕駛: return "Not the driver";
                 case Why.數值超出範圍: return "Value out of range";
                 case Why.移動過快: return "Moving too fast";

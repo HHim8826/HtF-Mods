@@ -116,6 +116,31 @@ RPC 參數裡的 `Player`（或物品的持有者）必須就是送出封包的�
 驗證方式是 `player.Owner` 對上 reader 給的 `conn`——`Player` 是用
 `base.Spawn(player.gameObject, conn, ...)` 生成的，擁有者就是當初送 `SpawnPlayer` 的人。
 
+**「誰有資格」不是只有持有者一種。** 每條 RPC 要對上的是它自己那個送出點的閘門，
+照抄同一套會把正常玩的人擋掉：
+
+| 閘門 | 適用 | 例子 |
+|---|---|---|
+| 持有者 | 手上的東西 | `ReloadWeapon`、`SetItemSkin`、`UpdateHeldToolPosRot` |
+| **模擬者** | 沒人拿著、但由某個客戶端在算物理的東西 | `GrillItemInLava` |
+| 駕駛 | 船 | `SendBoatInput`、`SetDriver(null)` |
+| 目標本身的狀態 | 沒有「操作者」可驗的 | `SetItemMultiplier` |
+
+`GrillItemInLava` 是踩到這條的例子：唯一的送出點 `MainLava.ItemTouchedLava`
+（`MainLava.cs:96`）的閘門是 **`item.RigidbodySync.IsSimulatedLocal`**，不是持有者
+——丟進岩漿的東西本來就沒有人拿著。所以驗的是
+`RigidbodySync.SyncedSimulator`（SyncVar，伺服器端是對的）對上發送端。
+沒有競態：`StartSimulateLocal` 是**先**送 `SetSyncedSimulator` 才
+`ToggleSimulation(true)`，兩條 RPC 又都是 Reliable 同序。
+
+`SetItemMultiplier` 沒有操作者可以驗——它的送出點是 `Creature.LocalHit`
+（`Creature.cs:397`），擊殺者的客戶端替**剛死的那隻生物**設倍率，而擊殺者
+既不是持有者也不是模擬者。所以改成驗**目標**：必須是一隻已經死掉的 `Creature`。
+這擋掉「對場上任何值錢物品設 100 倍」。它在 `HitCreature` 之後才送、兩條同序，
+所以守衛跑到時 `Hp` 已歸零。遊戲另外有一道
+`if (_killScoreMultiplier.Value != 1f) return;`（`Item.cs:893`），一個物品只能設一次，
+所以剩下的攻擊面只有「搶在擊殺者之前對某隻死掉的生物設值」。
+
 ### 價格（`檢查購買價格`）
 
 魚餌、船馬達、船雷達這三條把價格當參數讓客戶端自己填。**正解不是硬寫價格表**，

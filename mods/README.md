@@ -176,6 +176,9 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
 - **守衛不能丟例外。** FishNet 把「RPC 執行期間丟例外」當成惡意封包直接踢掉發送者
   （`ServerManager.cs:1111-1119` 的 `Kick(KickReason.MalformedData)`），
   守衛自己的 bug 不該變成踢人。
+- **「誰有資格」要照抄那條 RPC 自己的送出點閘門**，不能一律用持有者。
+  `GrillItemInLava` 的閘門是 `RigidbodySync.IsSimulatedLocal`（丟進岩漿的東西沒人拿著），
+  `SendBoatInput` 是駕駛，`SetItemMultiplier` 根本沒有操作者可驗（改成驗目標是不是死掉的生物）。
 
 檢查分五類（各自可關）：操作者身分、購買價格、數值範圍、索引範圍、速率限制。
 另外有封鎖名單和一個 **F11** 的監控面板。**處置預設是「只記錄」**，
