@@ -35,9 +35,9 @@ jobs:
     name: 語法與文件
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
 
@@ -57,12 +57,12 @@ jobs:
       GAME_LIBS_REPO: ${{ vars.GAME_LIBS_REPO }}
       GAME_LIBS_TOKEN: ${{ secrets.GAME_LIBS_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 取得遊戲參照組件（私有 repo）
         id: libs
         if: env.GAME_LIBS_REPO != '' && env.GAME_LIBS_TOKEN != ''
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ vars.GAME_LIBS_REPO }}
           token: ${{ secrets.GAME_LIBS_TOKEN }}
@@ -72,7 +72,7 @@ jobs:
         if: steps.libs.outcome == 'skipped'
         run: echo "::notice::沒有設定遊戲參照組件，跳過建置（語法與文件檢查仍然有跑）。要打開它：把自己的 Managed/ 與 BepInEx/core/ 放進一個私有 repo，設定 variable GAME_LIBS_REPO 與 secret GAME_LIBS_TOKEN，步驟見 README 的「持續整合」。"
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         if: steps.libs.outcome == 'success'
         with:
           dotnet-version: '8.0.x'
@@ -116,7 +116,7 @@ jobs:
 
       - name: 收走 DLL
         if: steps.libs.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: HtF-Mods-${{ github.sha }}
           path: artifacts
