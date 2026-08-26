@@ -1,5 +1,7 @@
 using System;
+using FishNet;
 using FishNet.Connection;
+using FishNet.Managing;
 
 namespace HtF.Guardian
 {
@@ -53,10 +55,66 @@ namespace HtF.Guardian
             get
             {
                 NetworkConnection c = Current;
-                if (c == null) return true;
-                try { return c.IsLocalClient; }
-                catch (Exception) { return false; }
+                if (c == null) return true;   // 不是從網路進來的＝伺服器自己
+
+                // 三個獨立訊號，任一成立就算房主。**刻意不只靠 IsLocalClient**：
+                // 它是 `NetworkManager != null && NetworkManager.ClientManager.Connection == this`，
+                // 而 NetworkConnection.NetworkManager 是可能沒被設起來的
+                // （FishNet 自己在 GetAddress 那條路上就有 `if (NetworkManager == null)
+                // NetworkManager = InstanceFinder.NetworkManager;` 這種補救）。
+                // 那個欄位一旦是 null，IsLocalClient 就靜靜地回 false，
+                // 房主的每一個封包都會被當成外人檢查——實測踩到過。
+                if (Try(() => c.IsLocalClient)) return true;
+
+                // 備援一：直接跟本機客戶端的連線比 ClientId，不經過 conn.NetworkManager。
+                if (Try(() =>
+                {
+                    NetworkManager nm = NetworkManager.Instances.Count > 0 ? InstanceFinder.NetworkManager : null;
+                    return nm != null && Same(c, nm.ClientManager.Connection);
+                })) return true;
+
+                // 備援二：完全不碰 FishNet 的連線語意——房主操作的就是 Player.LocalPlayer。
+                if (Try(() =>
+                {
+                    Player local = Player.LocalPlayer;
+                    return local && Same(local.Owner, c);
+                })) return true;
+
+                Diagnose(c);
+                return false;
             }
+        }
+
+        private static bool Try(Func<bool> f)
+        {
+            try { return f(); }
+            catch (Exception) { return false; }
+        }
+
+        private static bool _diagnosed;
+
+        /// <summary>
+        /// 第一次判定「這條連線不是房主」時，把判斷依據印出來。
+        /// 房主豁免失效是這個 mod 最難察覺的故障——所有守衛都還在動，
+        /// 只是全部套在自己身上，看起來就像「正常玩也會被擋」。
+        /// </summary>
+        private static void Diagnose(NetworkConnection c)
+        {
+            if (_diagnosed) return;
+            _diagnosed = true;
+            try
+            {
+                NetworkManager nm = NetworkManager.Instances.Count > 0 ? InstanceFinder.NetworkManager : null;
+                NetworkConnection local = nm != null ? nm.ClientManager.Connection : null;
+                Player lp = Player.LocalPlayer;
+                Plugin.Log.LogInfo(string.Format(
+                    "第一條被視為外部連線的封包：conn id {0}、本機客戶端 id {1}、LocalPlayer owner id {2}。"
+                    + "如果這三個是同一個數字，代表房主豁免判斷有問題，請回報。",
+                    c.ClientId,
+                    ReferenceEquals(local, null) ? -1 : local.ClientId,
+                    (lp && !ReferenceEquals(lp.Owner, null)) ? lp.Owner.ClientId : -1));
+            }
+            catch (Exception) { }
         }
 
         /// <summary>這個 RPC 要不要驗證。房主預設跳過，見「也檢查房主自己」設定。</summary>

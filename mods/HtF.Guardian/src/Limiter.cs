@@ -13,6 +13,16 @@ namespace HtF.Guardian
     ///
     /// 字典是兩層的（連線 → RPC 名稱 → 桶），刻意不用 <c>clientId + "|" + rpc</c>
     /// 當單層鍵：位置更新這種 RPC 每秒進來幾十次，那樣每次都要配置一個字串。
+    ///
+    /// **兩個實測踩到的坑：**
+    ///
+    /// 1. **時鐘不能用 <c>Time.unscaledTime</c>**。它是每幀更新一次的，而 FishNet
+    ///    是在一幀之內把整批排隊的封包處理完（卡頓之後補跑好幾個 tick 更是如此）。
+    ///    同一幀進來的封包全部拿到同一個時間戳，桶完全不會回填，於是「卡頓後的一波」
+    ///    必定撞上限。改用 <c>Time.realtimeSinceStartup</c>（真的去讀時鐘）。
+    /// 2. **桶要夠大**。原本是 <c>rate × 0.5</c>，等於只有半秒的餘裕；
+    ///    網路抖一下、載入一次島，排隊的位置更新就爆掉了。改成 <c>rate × 2</c>
+    ///    （兩秒的量），洪水攻擊照樣擋得住，正常玩的爆發則吸收得掉。
     /// </summary>
     internal static class Limiter
     {
@@ -31,9 +41,9 @@ namespace HtF.Guardian
             float rate = perSecond * mul;
             if (rate <= 0f) return true;
 
-            // 桶的容量。至少留 5 個權杖，不然低速率的 RPC（例如買東西）
-            // 會被正常的連按兩下打到。
-            float burst = Mathf.Max(rate * 0.5f, 5f);
+            // 桶的容量＝兩秒的量，至少 20 個權杖。低速率的 RPC（例如買東西）
+            // 也才不會被正常的連按幾下打到。
+            float burst = Mathf.Max(rate * 2f, 20f);
 
             int id = ReferenceEquals(conn, null) ? -1 : conn.ClientId;
             Dictionary<string, Bucket> perRpc;
@@ -43,7 +53,8 @@ namespace HtF.Guardian
                 Buckets[id] = perRpc;
             }
 
-            float now = Time.unscaledTime;
+            // realtimeSinceStartup 會真的去讀時鐘，unscaledTime 是每幀才更新一次。
+            float now = Time.realtimeSinceStartup;
             Bucket b;
             if (!perRpc.TryGetValue(rpc, out b))
             {

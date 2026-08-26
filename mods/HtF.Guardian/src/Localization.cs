@@ -38,6 +38,7 @@ namespace HtF.Guardian
 
         internal static string ColPlayer { get { return Loc.P("玩家", "Player"); } }
         internal static string ColViolations { get { return Loc.P("違規", "Blocked"); } }
+        internal static string ColRateDrops { get { return Loc.P("丟包", "Dropped"); } }
         internal static string ColLast { get { return Loc.P("最後一次", "Last"); } }
         internal static string ColAction { get { return Loc.P("動作", "Actions"); } }
         internal static string ColSteamId { get { return Loc.P("Steam ID", "Steam ID"); } }

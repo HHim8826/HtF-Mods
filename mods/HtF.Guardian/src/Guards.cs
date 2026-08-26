@@ -133,7 +133,7 @@ namespace HtF.Guardian
         internal static bool UpdatePlayerPosRot(Player __0, Vector3 __1)
         {
             if (Sender.Exempt) return true;
-            if (!G.Rate("UpdatePlayerPosRot", 120f)) return false;
+            if (!G.Rate("UpdatePlayerPosRot", 200f)) return false;
             if (Id && !Sender.Owns(__0)) return G.Deny("UpdatePlayerPosRot", Why.身分不符);
             if (Val && !Finite(__1)) return G.Deny("UpdatePlayerPosRot", Why.數值超出範圍);
             if (!Speed.Ok(__0, __1)) return G.Deny("UpdatePlayerPosRot", Why.移動過快);
@@ -191,14 +191,17 @@ namespace HtF.Guardian
             if (Sender.Exempt) return true;
             if (!G.Rate("HitCreature", 60f)) return false;
             if (Id && !Sender.Owns(__1)) return G.Deny("HitCreature", Why.身分不符);
+
+            // 記下「誰打了這隻」。SetItemMultiplier 沒有操作者可以驗，
+            // 唯一能用的身分就是這個（見 Damagers 的說明）。
+            // 在數值檢查**之前**記：傷害被夾掉不代表這個人沒在打這隻，
+            // 記漏了會讓緊接著的 SetItemMultiplier 被誤判成外人。
+            Damagers.Record(__0, Sender.Current);
+
             // 負傷害會走 Creature.ServerChangeHp 的 `_hp.Value -= damage`，等於替生物回血。
             // 0 放行：伺服器端本來就是無動作，擋它只會製造假違規。
             if (Val && (__2 < 0 || __2 > Plugin.MaxCreatureDamage.Value))
                 return G.Deny("HitCreature", Why.數值超出範圍);
-
-            // 記下「誰打了這隻」。SetItemMultiplier 沒有操作者可以驗，
-            // 唯一能用的身分就是這個（見 Damagers 的說明）。
-            Damagers.Record(__0, Sender.Current);
             return true;
         }
 
@@ -279,7 +282,7 @@ namespace HtF.Guardian
         internal static bool ProjectileHitDynamic(ref NetworkConnection __0)
         {
             if (Sender.Exempt) return true;
-            if (!G.Rate("ProjectileHitDynamic", 120f)) return false;
+            if (!G.Rate("ProjectileHitDynamic", 200f)) return false;
             // 命中歸屬只能是自己。遊戲的送出點（ProjectileManager.Hit）本來送的
             // 就是 projectile.Owner.Owner，而它只在 projectile.IsLocal 時才送。
             if (Id && !Sender.Same(__0, Sender.Current))
@@ -309,7 +312,7 @@ namespace HtF.Guardian
         internal static bool UpdateHeldToolPosRot(Tool __0)
         {
             if (Sender.Exempt) return true;
-            if (!G.Rate("UpdateHeldToolPosRot", 120f)) return false;
+            if (!G.Rate("UpdateHeldToolPosRot", 200f)) return false;
             if (Id && !HeldBySender(__0)) return G.Deny("UpdateHeldToolPosRot", Why.不是持有者);
             return true;
         }
@@ -393,10 +396,18 @@ namespace HtF.Guardian
             // 所以驗的是「發送端是不是最後打這隻的人」——那份資訊由 HitCreature
             // 的守衛順手記下來（見 Damagers）。順序有保證：LocalHit 先送 HitCreature
             // 再送 SetItemMultiplier，兩條都是 Reliable 同序。
+            //
+            // **不要用 Creature.IsDead 當條件。** 它是 `Hp <= 0`，而 `Creature.Hp`
+            // 是一個普通的 auto-property，只在 `OnStartClient` 和
+            // `OnHealthChange` 的**客戶端那一輪**被寫（`Creature.cs:496` 開頭就是
+            // `if (asServer) return;`）。伺服器端改的是 SyncVar `_hp.Value`，
+            // 而 `Hp` 這個鏡像要等客戶端回呼才跟上——RPC 剛進來的那一刻它還是舊值。
+            // 第一版拿它當條件，結果正常擊殺全被擋（實測 43 次「目標無效」）。
+            // 「最後打這隻的人」本身就已經是足夠的授權，不需要再問死了沒有。
             if (Id)
             {
                 Creature creature = __0 ? __0.Creature : null;
-                if (!creature || !creature.IsDead || !Damagers.IsLastDamager(creature, Sender.Current))
+                if (!creature || !Damagers.IsLastDamager(creature, Sender.Current))
                     return G.Deny("SetItemMultiplier", Why.目標無效);
             }
 
@@ -420,20 +431,27 @@ namespace HtF.Guardian
         internal static bool PlayImpactSound()
         {
             if (Sender.Exempt) return true;
-            return G.Rate("PlayImpactSound", 60f);
+            return G.Rate("PlayImpactSound", 200f);
         }
 
         internal static bool HandOverItemSimulation()
         {
             if (Sender.Exempt) return true;
-            return G.Rate("HandOverItemSimulation", 30f);
+            // **遊戲自己就在洪水般地送這一條。** `ItemExtraRigidbody.OnCollisionStay`
+            // 對「還活著的 Boss 生物」每個物理步、每個接觸對都送一次
+            // （`ItemExtraRigidbody.cs:133`），一隻 Boss 靠在地形上就是每秒好幾百。
+            // 原本給 30/s 是離譜的低估，實測一場刷出兩千多筆。
+            //
+            // 這條的實際效果也幾乎都是多餘的：`StartSimulateLocal` 自己會在
+            // 「已經是本機在模擬」時提早 return，所以擋它的防護價值很低。
+            return G.Rate("HandOverItemSimulation", 400f);
         }
 
         internal static bool UpdateItemPosRot(ref NetworkConnection __1)
         {
             if (Sender.Exempt) return true;
             // 全場物品的位置同步都走這一條，是流量最大的 RPC。
-            if (!G.Rate("UpdateItemPosRot", 400f)) return false;
+            if (!G.Rate("UpdateItemPosRot", 800f)) return false;
 
             // 模擬權的宣稱只能是自己。RigidbodySync.ServerSetPosRot 用這個連線做
             // 回音判斷，讓客戶端自己填等於可以冒名搬東西（`/tpitems` 就是這樣做的）。
@@ -450,7 +468,7 @@ namespace HtF.Guardian
         internal static bool SetSyncedSimulator(ref NetworkConnection __1)
         {
             if (Sender.Exempt) return true;
-            if (!G.Rate("SetSyncedSimulator", 60f)) return false;
+            if (!G.Rate("SetSyncedSimulator", 200f)) return false;
             if (!Id) return true;
 
             if (Sender.Same(__1, Sender.Current)) return true;
@@ -477,7 +495,7 @@ namespace HtF.Guardian
         internal static bool UpdateBaitPosAndLineLength(FishingRod __0)
         {
             if (Sender.Exempt) return true;
-            if (!G.Rate("UpdateBaitPosAndLineLength", 120f)) return false;
+            if (!G.Rate("UpdateBaitPosAndLineLength", 200f)) return false;
             if (Id && !HeldBySender(__0)) return G.Deny("UpdateBaitPosAndLineLength", Why.不是持有者);
             return true;
         }
@@ -485,7 +503,7 @@ namespace HtF.Guardian
         internal static bool UpdateRodPullBack(FishingRod __0)
         {
             if (Sender.Exempt) return true;
-            if (!G.Rate("UpdateRodPullBack", 120f)) return false;
+            if (!G.Rate("UpdateRodPullBack", 200f)) return false;
             if (Id && !HeldBySender(__0)) return G.Deny("UpdateRodPullBack", Why.不是持有者);
             return true;
         }
@@ -701,7 +719,7 @@ namespace HtF.Guardian
         internal static bool SendBoatInput()
         {
             if (Sender.Exempt) return true;
-            if (!G.Rate("SendBoatInput", 120f)) return false;
+            if (!G.Rate("SendBoatInput", 200f)) return false;
             if (!Id) return true;
 
             Player driver = CurrentDriver();

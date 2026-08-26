@@ -33,7 +33,12 @@ namespace HtF.Guardian
         internal int ClientId;
         internal ulong SteamId;
         internal string Name = "";
+        /// <summary>授權類違規。**只有這個會累積到處置門檻。**</summary>
         internal int Count;
+
+        /// <summary>速率桶丟掉的封包數。只顯示，不處置——理由見 <see cref="G.Record"/>。</summary>
+        internal int RateDrops;
+
         internal Why LastWhy;
         internal string LastRpc = "";
         internal float LastTime;
@@ -103,6 +108,9 @@ namespace HtF.Guardian
             return Deny(rpc, Why.太頻繁);
         }
 
+        /// <summary>這次擋下來算不算「證據」。速率丟包不算，理由見 <see cref="Record"/>。</summary>
+        private static bool CountsAsEvidence(Why why) { return why != Why.太頻繁; }
+
         // ------------------------------------------------------------------ 記錄與處置
 
         private static void Record(NetworkConnection conn, string rpc, Why why)
@@ -118,8 +126,18 @@ namespace HtF.Guardian
                 o = new Offender { ClientId = id, SteamId = Sender.SteamIdOf(conn) };
                 Offenders[id] = o;
             }
-            Decay(o, now);
-            o.Count++;
+            // 速率丟包**不累積到處置門檻**。丟掉那個封包，洪水攻擊就已經擋住了；
+            // 而正常玩本來就會因為卡頓、載入、網路抖動排出一小波封包，
+            // 把那些當成「作弊證據」去累積，最後會踢掉完全沒做錯事的人。
+            // 它仍然會進事件清單和面板，房主看得到。
+            bool evidence = CountsAsEvidence(why);
+            if (evidence)
+            {
+                Decay(o, now);
+                o.Count++;
+            }
+            else o.RateDrops++;
+
             o.LastWhy = why;
             o.LastRpc = rpc;
             o.LastTime = now;
@@ -128,8 +146,8 @@ namespace HtF.Guardian
             Events.Add(new Incident { Time = now, ClientId = id, Name = o.Name, Rpc = rpc, Why = why });
             if (Events.Count > MaxEvents) Events.RemoveRange(0, Events.Count - MaxEvents);
 
-            MaybeLog(id, rpc, why, o, now);
-            MaybePunish(conn, o);
+            MaybeLog(id, rpc, why, o, now, evidence);
+            if (evidence) MaybePunish(conn, o);
         }
 
         /// <summary>
@@ -152,7 +170,7 @@ namespace HtF.Guardian
             if (forgiven > 0) o.Count = Mathf.Max(0, o.Count - forgiven);
         }
 
-        private static void MaybeLog(int id, string rpc, Why why, Offender o, float now)
+        private static void MaybeLog(int id, string rpc, Why why, Offender o, float now, bool evidence)
         {
             // key 是 (clientId, rpc)。rpc 全是程式裡的字面值，字串常數池共用，
             // 所以 GetHashCode 穩定且不配置記憶體。
@@ -162,8 +180,13 @@ namespace HtF.Guardian
             if (cd > 0f && LastLogged.TryGetValue(key, out last) && now - last < cd) return;
             LastLogged[key] = now;
 
-            Plugin.Log.LogWarning(string.Format("擋下 {0} ← {1} (id {2})：{3}　累計 {4} 次",
-                rpc, string.IsNullOrEmpty(o.Name) ? "?" : o.Name, id, why, o.Count));
+            string line = string.Format("擋下 {0} ← {1} (id {2})：{3}　累計 {4} 次",
+                rpc, string.IsNullOrEmpty(o.Name) ? "?" : o.Name, id, why,
+                evidence ? o.Count : o.RateDrops);
+
+            // 速率丟包在卡頓後本來就會出現，用 Warning 會讓正常玩的 log 看起來像出事了。
+            if (evidence) Plugin.Log.LogWarning(line);
+            else Plugin.Log.LogInfo(line);
         }
 
         private static void MaybePunish(NetworkConnection conn, Offender o)
