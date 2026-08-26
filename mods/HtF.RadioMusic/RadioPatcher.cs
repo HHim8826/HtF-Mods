@@ -28,7 +28,43 @@ namespace HtF.RadioMusic
         private static void Radio_OnStartClient_Postfix(Radio __instance)
         {
             if (!Live.Contains(__instance)) Live.Add(__instance);
+            // 順序不能反：頻道數決定曲目怎麼分配（TracksFor 吃 totalChannels），
+            // 而且新頻道要先存在才輪得到它拿 clip。
+            Stations.Rebuild(__instance, Channels(__instance), MusicLibrary.TotalClips);
             ApplyClips(__instance);
+        }
+
+        internal static void SetChannels(Radio radio, RadioChannel[] channels)
+        {
+            Resolve();
+            if (_fChannels == null || !radio || channels == null) return;
+            _fChannels.SetValue(radio, channels);
+        }
+
+        internal static void SetSource(RadioChannel channel, AudioSource source)
+        {
+            Resolve();
+            if (_fChannelSource == null || channel == null) return;
+            _fChannelSource.SetValue(channel, source);
+        }
+
+        internal static Vector2 FreqRange(Radio radio)
+        {
+            Resolve();
+            if (_fFreqMinMax == null || !radio) return new Vector2(88f, 108f);
+            return (Vector2)_fFreqMinMax.GetValue(radio);
+        }
+
+        /// <summary>設定改了就重建頻道並重新套曲目。</summary>
+        internal static void RebuildAll()
+        {
+            Live.RemoveAll(r => !r);
+            Stations.PruneDead();
+            for (int i = 0; i < Live.Count; i++)
+            {
+                Stations.Rebuild(Live[i], Channels(Live[i]), MusicLibrary.TotalClips);
+                ApplyClips(Live[i]);
+            }
         }
 
         /// <summary>
@@ -372,7 +408,7 @@ namespace HtF.RadioMusic
             catch (Exception) { return null; }
         }
 
-        private static AudioSource SourceOf(RadioChannel channel)
+        internal static AudioSource SourceOf(RadioChannel channel)
         {
             Resolve();
             if (_fChannelSource == null || channel == null) return null;

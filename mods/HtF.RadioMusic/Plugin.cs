@@ -29,6 +29,8 @@ namespace HtF.RadioMusic
 
         internal static ConfigEntry<float> NoiseVolume, MusicVolume;
         internal static ConfigEntry<bool> PlayThroughBoss, AutoAdvance, SyncPlayback;
+        internal static ConfigEntry<int> ChannelCount;
+        internal static ConfigEntry<float> MinSpacing;
         internal static ConfigEntry<KeyboardShortcut> NextTrackKey, ReloadKey;
 
         private Harmony _harmony;
@@ -40,6 +42,7 @@ namespace HtF.RadioMusic
             // Loc.Bind = 綁設定 + 登記英文名稱與中英說明（見 mods/Shared/Loc.cs）。
             // key 一律維持原本的中文：那是 .cfg 的識別字，翻譯它會讓舊設定全部失效。
             Loc.Section("聲音", "Audio");
+            Loc.Section("頻道", "Stations");
             Loc.Section("按鍵", "Keys");
 
             NoiseVolume = Loc.Bind(Config, "聲音", "雜訊音量倍率", 1.0f, "Static Noise Volume",
@@ -61,6 +64,26 @@ namespace HtF.RadioMusic
                 + "打開這個選項會把音量重新算回來，讓音樂繼續。",
                 "By default the game mutes the whole radio when a boss shows up (both stations and noise drop to zero).\n"
                 + "Turn this on to recompute the volume and keep the music going.");
+
+            ChannelCount = Loc.Bind(Config, "頻道", "頻道數", -1, "Station Count",
+                "−1 = 不改（用遊戲原本的頻道數）。0 = 自動，跟著曲目數走，"
+                + "但不超過波段放得下的數量。其他數字 = 指定幾個。\n"
+                + "頻道會平均攤在 88–108 上，所以「一首歌一個頻率」就是設 0。",
+                "−1 = leave the game's own stations alone. 0 = automatic: one per track, "
+                + "capped at however many fit in the band. Any other number sets it explicitly.\n"
+                + "Stations are spread evenly across 88–108, so \"one song per frequency\" is just 0.",
+                new AcceptableValueRange<int>(-1, 20));
+
+            MinSpacing = Loc.Bind(Config, "頻道", "最小頻道間距", 3.0f, "Minimum Station Spacing",
+                "自動模式最多塞到這個間距為止。遊戲的音量算式是"
+                + "「誤差 0.5 以內滿音量、到 1.5 才完全消失」，所以相距 3.0 才聽得乾淨；"
+                + "調小會塞進更多台，但相鄰的會互相滲音。\n"
+                + "88–108 共 20，間距 3.0 就是最多 7 台。",
+                "How tightly automatic mode is allowed to pack the stations. The game's volume curve is "
+                + "full within 0.5 and only silent past 1.5, so 3.0 apart is the point where stations stop "
+                + "bleeding into each other. Lower it to fit more in at the cost of overlap.\n"
+                + "The band is 20 wide, so 3.0 means at most 7 stations.",
+                new AcceptableValueRange<float>(0.5f, 10f));
 
             AutoAdvance = Loc.Bind(Config, "聲音", "自動接下一首", true, "Auto-Advance Playlist",
                 "一個頻道分到多首歌時，像真的電台一樣自己接著播下去。\n"
@@ -101,6 +124,13 @@ namespace HtF.RadioMusic
             ReloadKey = Loc.Bind(Config, "按鍵", "重新載入音樂", new KeyboardShortcut(KeyCode.F8), "Reload Music",
                 "不用重開遊戲就能套用資料夾裡新增的檔案。",
                 "Pick up files you just added to the folder without restarting the game.");
+
+            Config.SettingChanged += (s, e) =>
+            {
+                // 頻道數變了要重建陣列，其餘設定重套曲目就夠。
+                if (e.ChangedSetting == ChannelCount || e.ChangedSetting == MinSpacing)
+                    RadioPatcher.RebuildAll();
+            };
 
             MusicLibrary.EnsureFolder();
 
@@ -162,7 +192,10 @@ namespace HtF.RadioMusic
                 Log.LogInfo("音樂資料夾裡沒有可用的檔案，收音機維持原曲。");
 
             // 音樂是非同步載入的，載完時場上可能已經有收音機了，回頭補套用。
-            RadioPatcher.ApplyToAll();
+            // **要走 RebuildAll 而不是 ApplyToAll**：自動模式的頻道數是跟著曲目數走的，
+            // 而收音機的 OnStartClient 很可能發生在音樂載完之前——那時候 TotalClips
+            // 還是 0，頻道根本不會被建出來。
+            RadioPatcher.RebuildAll();
 
             // 舊 clip 的記憶體要等這時候才放：ApplyToAll 之前砍的話，
             // AudioSource 上掛的會是已經被銷毀的 clip。
