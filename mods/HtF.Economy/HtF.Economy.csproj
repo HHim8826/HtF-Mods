@@ -1,9 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <AssemblyName>HtF.Economy</AssemblyName>
-    <RootNamespace>HtF.Economy</RootNamespace>
-    <Version>1.1.0</Version>
-    <PluginName>HtF Economy</PluginName>
-  </PropertyGroup>
-  <Import Project="..\Common.props" />
-</Project>

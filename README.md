@@ -1,11 +1,11 @@
-# HtF-Mods — How to Fish 的八個 BepInEx mod
+# HtF-Mods — How to Fish 的七個 BepInEx mod
 
-八個各自獨立的 mod：HUD 數值化、剩餘子彈、反外掛驗證層、房主規則、
-經濟與釣魚生態、收音機自訂音樂與同步收聽、遊戲內設定頁面，以及一個指令工具視窗。
+七個各自獨立的 mod：HUD 數值化、剩餘子彈、反外掛驗證層、
+房主規則與釣魚生態、收音機自訂音樂與同步收聽、遊戲內設定頁面，以及一個指令工具視窗。
 **介面中英雙語**，跟著遊戲語系自動切換。
 
-Eight standalone BepInEx mods for *How to Fish*: HUD numbers, an ammo counter, a
-host-side anti-cheat layer, host rules, economy and fishing ecology, custom radio music,
+Seven standalone BepInEx mods for *How to Fish*: HUD numbers, an ammo counter, a
+host-side anti-cheat layer, host rules and fishing ecology, custom radio music,
 an in-game settings page, and a command tool window.
 **The UI is bilingual (繁體中文 / English)** and follows the game's own
 language setting automatically.
@@ -15,8 +15,7 @@ language setting automatically.
 | `HtF.HudNumbers` | `HtF_HudNumbers` | `htf.hudnumbers` | 只有你自己 | 血量／飽食／手上物品／準心指向數值化（F6） |
 | `HtF.AmmoCounter` | `HtF_AmmoCounter` | `htf.ammocounter` | 只有你自己 | 手上槍械的剩餘子彈，數字／圓點（F10） |
 | `HtF.Guardian` | `HtF_Guardian` | `htf.guardian` | 只有房主 | ServerRpc 驗證層、速率限制、封鎖名單、監控面板（F11） |
-| `HtF.HostRules` | `HtF_HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值 |
-| `HtF.Economy` | `HtF_Economy` | `htf.economy` | 房主（售價顯示要一致則全員） | 賣價、花費、起始金錢、抽魚權重、保底、咬鉤時間 |
+| `HtF.HostRules` | `HtF_HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值、抽魚權重、保底、咬鉤時間 |
 | `HtF.RadioMusic` | `HtF_RadioMusic` | `htf.radiomusic` | 只有你自己（同步播放則全員） | 收音機自訂音樂、一首歌一個頻率、自動接下一首、一起聽（F7／F8） |
 | `HtF.ConfigMenu` | `HtF_ConfigMenu` | `htf.configmenu` | 只有你自己 | 遊戲內設定管理頁面（通用，F9） |
 | `HtF.DazedTools` | `HtF_DazedTools` | `htf.dazedtools` | 只有你自己 | 遊戲內建 dev 指令的圖形介面（Insert） |
@@ -45,7 +44,7 @@ dotnet build mods/HtF.HudNumbers/HtF.HudNumbers.csproj \
 
 ## 發布到 Thunderstore
 
-社群是 [how-to-fish](https://thunderstore.io/c/how-to-fish/)。八個 mod 各是一個獨立套件，
+社群是 [how-to-fish](https://thunderstore.io/c/how-to-fish/)。七個 mod 各是一個獨立套件，
 套件名把點換成底線（`HtF.HudNumbers` → `HtF_HudNumbers`）——Thunderstore 的 `name`
 只收 `a-zA-Z0-9_`。
 
@@ -72,7 +71,7 @@ HtF_HudNumbers.zip
 
 ### 圖示
 
-八張 `icon.png` 由 [`.github/tools/make_icons.py`](.github/tools/make_icons.py) 產生
+七張 `icon.png` 由 [`.github/tools/make_icons.py`](.github/tools/make_icons.py) 產生
 （需要 Pillow），改顏色或字符就重跑一次：
 
 ```bash
@@ -104,13 +103,13 @@ Thunderstore **不收重覆的版本號**——送錯了那個號碼就用掉了
 python .github/tools/make_packages.py
 ```
 
-產出在 `dist/`，一個 mod 一個 zip（`HtF_Economy-1.1.0.zip`），外加一份 `RELEASE_NOTES.md`。
+產出在 `dist/`，一個 mod 一個 zip（`HtF_HostRules-1.1.0.zip`），外加一份 `RELEASE_NOTES.md`。
 腳本**開頭會先跑 `check_repo.py`**：版本號對不上就不該包，理由同上。
 
 | 參數 | 用途 |
 |---|---|
 | `--no-build` | 不重新建置，用 `bin/Release` 底下現成的 DLL |
-| `--only HtF.Economy` | 只重包一個。這時不會清掉 `dist/` 裡的其他 zip，也不會動 `RELEASE_NOTES.md` |
+| `--only HtF.Guardian` | 只重包一個。這時不會清掉 `dist/` 裡的其他 zip，也不會動 `RELEASE_NOTES.md` |
 | `--game-managed` / `--bepinex-core` | 覆寫參照組件的路徑 |
 
 打包不會順手裝進你的 r2modman——`PluginOut` 會被蓋掉，
@@ -122,12 +121,12 @@ python .github/tools/make_packages.py
 
 | 觸發 | 做什麼 |
 |---|---|
-| 推一個 `v*` 的 tag | 建置、打包、**建立 Release 並附上八個 zip** |
+| 推一個 `v*` 的 tag | 建置、打包、**建立 Release 並附上七個 zip** |
 | 手動 workflow_dispatch | 一樣建置打包，但只留成 artifact，不建 Release |
 
 手動那條是給你先試跑用的：下載 artifact 看過沒問題再推 tag。
 
-**tag 只是這個 repo 的發布標記，不是套件版本。** 八個套件各有自己的版本號，
+**tag 只是這個 repo 的發布標記，不是套件版本。** 七個套件各有自己的版本號，
 一次發布裡它們通常是不一樣的，所以 tag 叫 `v2026.08.26` 或 `v3` 都行。
 
 發布要用和 CI 的 `build` 一樣的參照組件設定（見下面「持續整合」），
@@ -143,7 +142,7 @@ python .github/tools/make_packages.py
 | Job | 要遊戲組件嗎 | 做什麼 |
 |---|---|---|
 | `checks` | 不要 | Roslyn 把 `mods/**/*.cs` 逐檔剖析（語法、編碼）、BepInPlugin 的 GUID 有沒有撞號、兩份 README 的表格和實際的專案對不對得上 |
-| `build` | 要 | 以 Release 建置八個 mod，DLL 收成 artifact |
+| `build` | 要 | 以 Release 建置七個 mod，DLL 收成 artifact |
 
 **`build` 預設是跳過的。** 完整編譯得對著遊戲的 `Managed/*.dll`，而那份東西不進版控
 （理由見下面「不在這個 repo 裡的東西」），公開 repo 的 CI 也沒有別的地方拿得到它。
@@ -158,7 +157,7 @@ python .github/tools/make_packages.py
 
 ## 文件
 
-- `mods/README.md` — 八個 mod 的設計說明、中英雙語架構、踩過的坑
+- `mods/README.md` — 七個 mod 的設計說明、中英雙語架構、踩過的坑
 - `mods/<專案>/README.md` — 該 mod 的套件說明（**英文**，Thunderstore 頁面用的就是它）
 - `mods/<專案>/README_ZH.md` — 同一份的繁體中文版
 - `mods/HtF.Guardian/README_ZH.md` — 反外掛驗證層：問題、做法、擋不住的東西
@@ -172,6 +171,6 @@ python .github/tools/make_packages.py
 
 ## 授權
 
-[MIT](LICENSE)。八個 mod 都適用。
+[MIT](LICENSE)。七個 mod 都適用。
 
 遊戲本體與 FishNet 的程式碼**不在**這個授權的範圍內——那是別人的，這個 repo 也沒有散布它們。

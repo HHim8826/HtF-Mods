@@ -21,8 +21,8 @@ CI 上沒有遊戲組件、做不了完整編譯，但這幾件事不需要編�
    [BepInPlugin] 由 Common.props 產生的 ModInfo 帶過去，manifest.json 則是
    另一份字面值——沒有人對帳的話，遲早會用舊號碼把新東西送上去。
 
-檢查只看**表格列**（`| `HtF.Xxx` | ...`），不看內文——內文本來就會提到
-已經被合併掉的 `HtF.FishingEcology`（叫使用者去刪舊資料夾），那不是錯誤。
+檢查只看**表格列**（`| `HtF.Xxx` | ...`），不看內文——內文本來就會提到已經被
+合併掉的 `HtF.Economy` 和 `HtF.FishingEcology`（叫使用者去刪舊資料夾），那不是錯誤。
 """
 
 import io

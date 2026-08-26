@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using HarmonyLib;
 
-namespace HtF.Economy
+namespace HtF.HostRules
 {
     // 類別上這個空的 [HarmonyPatch] 是必要的：PatchClassProcessor 若在型別上
     // 找不到任何 Harmony 標註就直接略過整個類別，方法上的標註不會被掃到。
@@ -19,7 +19,7 @@ namespace HtF.Economy
         [HarmonyPrefix]
         private static void GetRandomItem_Prefix(ref List<ItemInfoWeight> weights)
         {
-            if (!Plugin.Enabled.Value) return;
+            if (!Plugin.FishingEnabled.Value) return;
 
             List<ItemInfoWeight> adjusted = WeightTable.Build(weights);
             if (adjusted != null) weights = adjusted;
@@ -30,7 +30,7 @@ namespace HtF.Economy
         [HarmonyPostfix]
         private static void GetRandomItem_Postfix(Fishable __result)
         {
-            if (!Plugin.Enabled.Value) return;
+            if (!Plugin.FishingEnabled.Value) return;
 
             bool rare = __result != null && WeightTable.LastRareSet.Contains(__result);
             if (rare) WeightTable.MissStreak = 0;

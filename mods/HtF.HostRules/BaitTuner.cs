@@ -4,7 +4,7 @@ using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 
-namespace HtF.Economy
+namespace HtF.HostRules
 {
     /// <summary>
     /// 咬鉤時間。

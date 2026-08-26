@@ -1,12 +1,12 @@
-# 發布：把八個 mod 打包成 Thunderstore 的 zip，掛上 GitHub Release。
+# 發布：把七個 mod 打包成 Thunderstore 的 zip，掛上 GitHub Release。
 #
-#   推一個 v* 的 tag  -> 建置、打包、**建立 Release 並附上八個 zip**
+#   推一個 v* 的 tag  -> 建置、打包、**建立 Release 並附上七個 zip**
 #   手動 workflow_dispatch -> 一樣建置打包，但只留成 artifact，不建 Release
 #
 # 後者是給你先試跑用的：想確認這次包出來的東西沒問題，先手動跑一次，
 # 下載 artifact 看過再推 tag。
 #
-# **tag 只是這個 repo 的發布標記，不是套件版本。** 八個套件各自有自己的版本號
+# **tag 只是這個 repo 的發布標記，不是套件版本。** 七個套件各自有自己的版本號
 # （寫在各 mod 的 .csproj，manifest.json 跟著對帳），一次發布裡它們的版本
 # 通常是不一樣的。tag 叫 v2026.08.26 或 v3 都行。
 #
@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   package:
-    name: 打包八個套件
+    name: 打包七個套件
     runs-on: windows-latest
     env:
       GAME_LIBS_REPO: ${{ vars.GAME_LIBS_REPO }}

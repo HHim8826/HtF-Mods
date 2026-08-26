@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""把八個 mod 打包成可以直接上傳 Thunderstore 的 zip。
+"""把七個 mod 打包成可以直接上傳 Thunderstore 的 zip。
 
     python .github/tools/make_packages.py                     # 建置 + 打包全部
     python .github/tools/make_packages.py --no-build          # 只打包（DLL 要已經建好）
-    python .github/tools/make_packages.py --only HtF.Economy  # 只做一個
+    python .github/tools/make_packages.py --only HtF.Guardian # 只做一個
     python .github/tools/make_packages.py --game-managed "D:\\...\\Managed"
 
 產出在 `dist/`：
@@ -118,9 +118,9 @@ def pack(mod, folder, out_dir):
 def write_notes(packed, out_dir):
     lines = [
         u"上傳到 [Thunderstore（how-to-fish）]"
-        u"(https://thunderstore.io/c/how-to-fish/) 的八個套件。",
+        u"(https://thunderstore.io/c/how-to-fish/) 的七個套件。",
         u"",
-        u"Eight packages for *How to Fish*. Each zip is ready to upload to Thunderstore as-is;",
+        u"Seven packages for *How to Fish*. Each zip is ready to upload to Thunderstore as-is;",
         u"to install by hand, unzip the `BepInEx/` folder into your game directory.",
         u"",
         u"| 套件 Package | 版本 Version | 檔案 File |",
@@ -165,7 +165,7 @@ def main():
             return 1
         mods = {m: mods[m] for m in args.only}
 
-    # 只有整批打包才清空。--only 時清掉會把上一輪其他七個 zip 一起帶走，
+    # 只有整批打包才清空。--only 時清掉會把上一輪其他六個 zip 一起帶走，
     # 而「只重包一個」正是最常用 --only 的場合。
     if args.only:
         if not os.path.isdir(args.out):
@@ -195,7 +195,7 @@ def main():
         return 1
 
     # --only 時不寫發布說明：它列的會是「這次包的那一個」，而 dist/ 裡通常
-    # 還躺著上一輪的另外七個，寫出去只會誤導。
+    # 還躺著上一輪的另外六個，寫出去只會誤導。
     if args.only:
         print("\n%d 個套件打包完成（--only，RELEASE_NOTES.md 沒有更新）。" % len(packed))
     else:

@@ -5,7 +5,7 @@ using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 
-namespace HtF.Economy
+namespace HtF.HostRules
 {
     /// <summary>
     /// 產生調整過的權重表。

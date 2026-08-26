@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""產生八個 mod 的 Thunderstore 圖示（`mods/<專案>/icon.png`）。
+"""產生七個 mod 的 Thunderstore 圖示（`mods/<專案>/icon.png`）。
 
     python .github/tools/make_icons.py
 
@@ -12,14 +12,14 @@ Thunderstore 只收 **剛好 256x256 的 PNG**，而清單上真正被看到的�
 RadioMusic 第一版畫音符，那只說得出「這是音樂 mod」；畫成收音機才說得出
 「這是改那台收音機的 mod」。HudNumbers 第一版畫愛心，同樣的毛病——愛心跟
 「把數值顯示出來」沒有關係，改成畫它自己那塊面板才對得上。
-同理 AmmoCounter 畫子彈、Economy 畫硬幣上的魚。只有本來就沒有對應實體的
+同理 AmmoCounter 畫子彈。只有本來就沒有對應實體的
 （Guardian 的保護、ConfigMenu 的設定）才用通用符號。
 
 設計取自 Modrinth 上那批效能 mod 的圖示：飽和的中間調底色 + 純白剪影，
 底色由上到下**微微變亮**（不是全平，也不是深色漸層）。字符佔 48-55%。
 
 顏色帶功能，不只是好看：**冷色 = 只有你自己要裝，暖色 = 只有房主要裝**。
-八張排在一起時，一眼就分得出哪些是給房主的。
+七張排在一起時，一眼就分得出哪些是給房主的。
 
 畫法是 4 倍超取樣後 LANCZOS 縮到 256——Pillow 的多邊形沒有反鋸齒，
 直接畫 256 會有階梯邊。
@@ -56,7 +56,6 @@ SLATE  = (85, 104, 137)
 # 暖色 = 只有房主要裝
 ORANGE = (224, 138, 60)
 RED    = (206, 90, 78)
-GOLD   = (217, 165, 33)
 
 
 def shade(c, k):
@@ -151,21 +150,6 @@ def sliders(d, cx, cy, w, h, fill, bg):
         d.ellipse([kx - knob, y - knob, kx + knob, y + knob], fill=fill)
         d.ellipse([kx - knob * 0.36, y - knob * 0.36,
                    kx + knob * 0.36, y + knob * 0.36], fill=bg)
-
-
-def coin_fish(d, cx, cy, r, fill, bg):
-    """硬幣上打一條魚。錢的來源就是魚，Economy 是同一條曲線的兩端。"""
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=fill)
-    bl, bh = r * 1.06, r * 0.56           # 魚身
-    fx = cx + r * 0.13
-    d.ellipse([fx - bl / 2.0, cy - bh / 2.0, fx + bl / 2.0, cy + bh / 2.0], fill=bg)
-    tail = fx - bl / 2.0                  # 魚尾
-    d.polygon([(tail + r * 0.06, cy),
-               (tail - r * 0.42, cy - r * 0.34),
-               (tail - r * 0.42, cy + r * 0.34)], fill=bg)
-    eye = r * 0.09                        # 眼睛用白色挖回來
-    ex, ey = fx + bl * 0.26, cy - bh * 0.16
-    d.ellipse([ex - eye, ey - eye, ex + eye, ey + eye], fill=fill)
 
 
 def radio(d, cx, cy, w, h, fill, bg):
@@ -266,7 +250,6 @@ ICONS = {
     # 暖色：只有房主要裝
     "HtF.Guardian":    (ORANGE, lambda d, bg: shield(d, N * .5, N * .5, N * .44, N * .54, WHITE)),
     "HtF.HostRules":   (RED,    lambda d, bg: sliders(d, N * .5, N * .5, N * .50, N * .46, WHITE, bg)),
-    "HtF.Economy":     (GOLD,   lambda d, bg: coin_fish(d, N * .5, N * .5, N * .26, WHITE, bg)),
 }
 
 

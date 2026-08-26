@@ -5,7 +5,7 @@
 #
 #   checks  永遠會跑。不需要任何遊戲組件，查的是語法、GUID 撞號、README 表格
 #           和實際專案對不對得上。
-#   build   只有在設定好私有的參照組件來源時才會真的建置八個 mod；沒設定就
+#   build   只有在設定好私有的參照組件來源時才會真的建置七個 mod；沒設定就
 #           留一則 notice 跳過，不會把 PR 弄紅。
 #
 # 要打開 build：把自己那份 `Managed/` 和 `BepInEx/core/` 放進一個**私有** repo
@@ -50,7 +50,7 @@ jobs:
         run: python3 .github/tools/check_repo.py
 
   build:
-    name: 建置八個 mod
+    name: 建置七個 mod
     runs-on: windows-latest
     env:
       # secret 不能直接寫在 step 的 if 裡，先接到 env 才判斷得到
