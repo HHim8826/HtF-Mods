@@ -93,7 +93,10 @@ namespace HtF.RadioMusic
                 + "關掉的話一個頻道同時只會有一首，其餘要按「下一首」熱鍵才聽得到"
                 + "（這是舊版的行為）。\n"
                 + "歌曲本來就是輪流平均分給各頻道的；打開這個之後，"
-                + "多出來的歌不會再被藏在熱鍵後面。",
+                + "多出來的歌不會再被藏在熱鍵後面。\n"
+                + "注意：「頻道數」是自動時每個頻道本來就只有一首歌，"
+                + "這個設定和「下一首」熱鍵都不會有作用——要它們有意義，"
+                + "頻道數得少於曲目數（設 −1 用遊戲原本的頻道就是）。",
                 "When a station has more than one track, play them back to back like a real radio station.\n"
                 + "Turn it off and each station only ever holds one track, with the rest reachable only "
                 + "through the Next Track hotkey (the old behaviour).\n"
@@ -163,8 +166,9 @@ namespace HtF.RadioMusic
                 }
                 else if (AutoAdvance.Value)
                 {
-                    RadioPatcher.SkipCurrent();
-                    Log.LogInfo("已跳過這首。");
+                    if (RadioPatcher.SkipCurrent()) Log.LogInfo("已跳過這首。");
+                    else Log.LogInfo("每個頻道都只有一首歌，沒有下一首可跳"
+                                     + "——「頻道數」設成自動時，一首歌就是一個頻率。");
                 }
                 else
                 {

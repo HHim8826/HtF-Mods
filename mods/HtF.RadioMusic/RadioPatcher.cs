@@ -30,7 +30,7 @@ namespace HtF.RadioMusic
             if (!Live.Contains(__instance)) Live.Add(__instance);
             // 順序不能反：頻道數決定曲目怎麼分配（TracksFor 吃 totalChannels），
             // 而且新頻道要先存在才輪得到它拿 clip。
-            Stations.Rebuild(__instance, Channels(__instance), MusicLibrary.TotalClips);
+            Stations.Rebuild(__instance, Channels(__instance), MusicLibrary.ChannelsNeeded());
             ApplyClips(__instance);
         }
 
@@ -62,7 +62,7 @@ namespace HtF.RadioMusic
             Stations.PruneDead();
             for (int i = 0; i < Live.Count; i++)
             {
-                Stations.Rebuild(Live[i], Channels(Live[i]), MusicLibrary.TotalClips);
+                Stations.Rebuild(Live[i], Channels(Live[i]), MusicLibrary.ChannelsNeeded());
                 ApplyClips(Live[i]);
             }
         }
@@ -384,12 +384,14 @@ namespace HtF.RadioMusic
         /// 一個頻道只推一次：場上有兩台收音機時，它們共用同一份節目表，
         /// 逐台推會變成一次跳好幾首。
         /// </summary>
-        internal static void SkipCurrent()
+        /// <summary>回傳 false = 每個頻道都只有一首歌，根本沒有「下一首」可跳。</summary>
+        internal static bool SkipCurrent()
         {
-            if (!MusicLibrary.Ready || MusicLibrary.TotalClips == 0) return;
+            if (!MusicLibrary.Ready || MusicLibrary.TotalClips == 0) return false;
 
             Live.RemoveAll(r => !r);
             var bumped = new HashSet<int>();
+            bool anyMultiTrack = false;
 
             for (int r = 0; r < Live.Count; r++)
             {
@@ -400,6 +402,10 @@ namespace HtF.RadioMusic
                 {
                     if (!bumped.Add(i)) continue;
 
+                    var tracks = MusicLibrary.TracksFor(i, channels.Length);
+                    if (tracks == null || tracks.Count < 2) continue;   // 只有一首，跳了也是同一首
+                    anyMultiTrack = true;
+
                     AudioClip clip;
                     float offset;
                     if (!Sync.Target(i, channels.Length, Sync.Clock(i), out clip, out offset)) continue;
@@ -408,6 +414,7 @@ namespace HtF.RadioMusic
             }
 
             TickPlaylist();   // 立刻反映，不用等下一幀
+            return anyMultiTrack;
         }
 
         // ------------------------------------------------------------------ 反射

@@ -63,13 +63,13 @@ namespace HtF.RadioMusic
         /// <summary>
         /// 依設定重建這台收音機的頻道。設定是「不改」或算出來的數量沒變就什麼都不做。
         /// </summary>
-        internal static void Rebuild(Radio radio, RadioChannel[] current, int trackCount)
+        internal static void Rebuild(Radio radio, RadioChannel[] current, int wantedStations)
         {
             if (!radio || current == null || current.Length == 0) return;
             Resolve();
             if (_fFrequency == null) return;
 
-            int want = Desired(current.Length, trackCount);
+            int want = Desired(current.Length, wantedStations);
             if (want <= 0) return;                 // −1 = 不改，或自動模式還沒有曲目
 
             Vector2 band = Band(radio);
@@ -108,17 +108,19 @@ namespace HtF.RadioMusic
         /// 要幾個頻道。
         /// −1 = 不改；0 = 自動（跟著曲目數，但不超過波段放得下的數量）；其餘 = 照設定。
         /// </summary>
-        private static int Desired(int vanilla, int trackCount)
+        private static int Desired(int vanilla, int wantedStations)
         {
             int cfg = Plugin.ChannelCount != null ? Plugin.ChannelCount.Value : -1;
             if (cfg < 0) return 0;          // 不改
             if (cfg > 0) return cfg;        // 使用者指定，即使會滲音也照做
 
-            if (trackCount <= 0) return 0;  // 沒有自訂音樂就沒必要動
+            if (wantedStations <= 0) return 0;  // 沒有自訂音樂就沒必要動
 
-            // 自動 = 一首歌一個頻率。**不再用間距夾住上限**——擠不擠得下不是靠少建幾台
-            // 解決的，是靠把衰減曲線收窄（見 WidthFactor）。這裡只留一個理智上限。
-            return Mathf.Clamp(trackCount, vanilla, MaxAuto);
+            // 自動 = 一首歌一個頻率（指定了子資料夾的那一組算一個頻道，
+            // 見 MusicLibrary.ChannelsNeeded）。**不用間距夾住上限**——擠不擠得下
+            // 不是靠少建幾台解決的，是靠把衰減曲線收窄（見 WidthFactor）。
+            // 這裡只留一個理智上限。
+            return Mathf.Clamp(wantedStations, vanilla, MaxAuto);
         }
 
         /// <summary>
