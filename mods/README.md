@@ -11,7 +11,7 @@
 | `HtF.Guardian` | `htf.guardian` | 只有房主 | ServerRpc 驗證層、速率限制、踢出／封鎖 |
 | `HtF.HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值 |
 | `HtF.Economy` | `htf.economy` | 房主（售價顯示要一致則全員） | 賣價、花費、起始金錢、抽魚權重、保底、咬鉤時間 |
-| `HtF.RadioMusic` | `htf.radiomusic` | 只有你自己 | 收音機自訂音樂、雜訊與音量 |
+| `HtF.RadioMusic` | `htf.radiomusic` | 只有你自己（同步播放則全員） | 收音機自訂音樂、自動接下一首、一起聽、雜訊與音量 |
 | `HtF.ConfigMenu` | `htf.configmenu` | 只有你自己 | 遊戲內設定管理頁面（通用） |
 | `HtF.DazedTools` | `htf.dazedtools` | 只有你自己 | ServerRPC 指令工具（見該資料夾的 README） |
 
@@ -403,6 +403,15 @@ float freq = (Holder && Holder.Owner.IsLocalClient) ? _localFrequency : _frequen
 順序是**先讓 `ApplyToAll` 把新 clip 換上去、再 `Destroy` 舊的**，
 還掛在某個 `AudioSource` 上的則留到下一輪再試。
 
+## HtF.DazedTools — 遊戲內建 dev 指令的圖形介面
+
+**設計說明在 `HtF.DazedTools/README.md`**（那個 mod 的內容夠多，自己一份）。
+一句話版本：遊戲自己有一套 `DazedCommands` 開發指令，但它有幾個必定自踢的 bug，
+這個 mod 把修好的版本搬進 BepInEx 並加上 IMGUI 操作介面（預設 Insert）。
+
+它和 `HtF.Guardian` 是同一件事的兩面：一個送這些 ServerRpc、一個擋。
+你當房主時兩個一起裝不會打架，房主預設豁免。
+
 ## HtF.ConfigMenu — 遊戲內設定管理頁面
 
 按 **F9** 開啟。左邊是插件清單，右邊是該插件的設定，依 section 分組。
@@ -511,18 +520,30 @@ Button 依 parent 分組，挑出「最像主要按鈕直欄」的那一組：
 遊戲主畫面回報的「1.0.9」來自 `globalgamemanagers` 的 bundleVersion
 （`CanvasManager` 讀 `Application.version`），**和 DLL 無關**，
 所以不能拿它判斷 DLL 新舊。實測 `Assembly-CSharp.dll` 與備份
-`Assembly-CSharp - 1.0.9.dll` 有 66 個檔案內容不同，但沒有新增或移除任何型別，
-而且**這些 mod 掛鉤的檔案兩份完全相同**：
+`Assembly-CSharp - 1.0.9.dll` 有一批檔案內容不同，但沒有新增或移除任何型別，
+而且**這些 mod 掛鉤的每一個方法，兩份都是一樣的**（逐方法比對過）：
 
-`ServerSettings` `PlayerVitals` `MoneyManager` `SaveManager` `Creature`
-`BaitInfo` `ItemInfoWeight` `Fishable`，以及 `Item.TotalWorth` 與
-`CreatureManager.GetRandomItem` 這兩個方法本身。
+| mod | 掛鉤點 | 兩版 |
+|---|---|---|
+| `HtF.HostRules` | `ServerSettings`、`PlayerVitals` | 相同 |
+| `HtF.Economy`（金錢） | `Item.TotalWorth`、`MoneyManager.RemoveMoney`、`SaveManager.CreateServer` | 相同 |
+| `HtF.Economy`（釣魚） | `CreatureManager.GetRandomItem`、`BaitInfo`、`ItemInfoWeight`、`Fishable` | 相同 |
+| `HtF.RadioMusic` | `Radio.ApplyVolume`、`RadioChannel`、`BossManager.OnBossDeath` | 相同 |
+| `HtF.Guardian` | `Server` 的 `RpcReader___*` / `RpcLogic___*`、`Player.BlockInputs`、`Purchasable` 三個子類 | 相同 |
+| `HtF.AmmoCounter` | `Weapon.Ammo`、`Attachments.AmmoPerMag` | 相同 |
+| `HtF.ConfigMenu` / `HtF.DazedTools` | `Player.BlockInputs`、`DazedCommands.IsServerCommand` | 相同 |
 
-三份反編譯結果都在 repo 裡：
+⚠ **檔案層級的 diff 會誇大差異。** 兩次反編譯是分別跑的，dnSpy 對型別的限定寫法
+不一定一致——例如 `CreatureManager.GetRandomItem` 整個檔案「不同」，但實際差異只有
+一行 `Random.Range(...)` 對 `global::UnityEngine.Random.Range(...)`，那是輸出格式
+不是程式碼。要判斷有沒有真的改動，**比方法、而且要看 diff 內容**，
+不要只看 `diff -q` 的結果。
+
+反編譯結果**不進版控**（見根目錄 README），要自己產生。本機的擺法是：
 
 | 資料夾 | 內容 |
 |---|---|
-| `Assembly-CSharp/` | 舊版（含你改過的 `DazedCommands.cs`），勿覆蓋 |
+| `Assembly-CSharp/` | 舊版（含改過的 `DazedCommands.cs`），勿覆蓋 |
 | `Assembly-CSharp-1.09/` | 1.0.9 備份 DLL |
 | `decompiled-current/` | 目前遊戲實際載入的版本 |
 

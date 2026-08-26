@@ -1,7 +1,7 @@
 # HtF-Mods — How to Fish 的八個 BepInEx mod
 
 八個各自獨立的 mod：HUD 數值化、剩餘子彈、反外掛驗證層、房主規則、
-經濟與釣魚生態、收音機自訂音樂、遊戲內設定頁面，以及一個指令工具視窗。
+經濟與釣魚生態、收音機自訂音樂與同步收聽、遊戲內設定頁面，以及一個指令工具視窗。
 **介面中英雙語**，跟著遊戲語系自動切換。
 
 Eight standalone BepInEx mods for *How to Fish*: HUD numbers, an ammo counter, a
@@ -12,13 +12,12 @@ language setting automatically.
 
 | 專案 | GUID | 誰要裝 | 做什麼 |
 |---|---|---|---|
-| `HtF.HudNumbers` | `htf.hudnumbers` | 只有你自己 | 血量／飽食／手上物品／準心指向數值化 |
-| `HtF.AmmoCounter` | `htf.ammocounter` | 只有你自己 | 手上槍械的剩餘子彈（數字／圓點） |
-| `HtF.Guardian` | `htf.guardian` | 只有房主 | ServerRpc 驗證層、速率限制、封鎖名單、監控面板 |
+| `HtF.HudNumbers` | `htf.hudnumbers` | 只有你自己 | 血量／飽食／手上物品／準心指向數值化（F6） |
+| `HtF.AmmoCounter` | `htf.ammocounter` | 只有你自己 | 手上槍械的剩餘子彈，數字／圓點（F10） |
+| `HtF.Guardian` | `htf.guardian` | 只有房主 | ServerRpc 驗證層、速率限制、封鎖名單、監控面板（F11） |
 | `HtF.HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值 |
-| `HtF.Economy` | `htf.economy` | 房主（顯示要一致則全員） | 賣價、花費、起始金錢 |
-| `HtF.FishingEcology` | `htf.fishingecology` | 只有房主 | 抽魚權重、保底、咬鉤時間 |
-| `HtF.RadioMusic` | `htf.radiomusic` | 只有你自己（同步播放則全員） | 收音機自訂音樂、雜訊與音量、一起聽 |
+| `HtF.Economy` | `htf.economy` | 房主（售價顯示要一致則全員） | 賣價、花費、起始金錢、抽魚權重、保底、咬鉤時間 |
+| `HtF.RadioMusic` | `htf.radiomusic` | 只有你自己（同步播放則全員） | 收音機自訂音樂、自動接下一首、一起聽、雜訊與音量（F7／F8） |
 | `HtF.ConfigMenu` | `htf.configmenu` | 只有你自己 | 遊戲內設定管理頁面（通用，F9） |
 | `HtF.DazedTools` | `htf.dazedtools` | 只有你自己 | 遊戲內建 dev 指令的圖形介面（Insert） |
 
