@@ -140,6 +140,14 @@ namespace HtF.RadioMusic
                     return;
                 }
 
+                // 寬度被改過就得整條重算——遊戲算出來的是它自己那條 ±0.5/±1.5 的曲線，
+                // 在原結果上乘倍率救不回來。Boss 靜音期間不重算（那時本來就該安靜）。
+                if (!bossSilenced && Stations.HasCustomWidth())
+                {
+                    Recompute(__instance);
+                    return;
+                }
+
                 var noise = _fNoise.GetValue(__instance) as AudioSource;
                 if (noise) noise.volume *= Plugin.NoiseVolume.Value;
 
@@ -182,13 +190,17 @@ namespace HtF.RadioMusic
             try { tickTime = (float)radio.TimeManager.TicksToTime(TickType.Tick); }
             catch (Exception) { }
 
+            // 頻道寬度倍率：1 = 遊戲原本的 ±0.5 滿音量 / ±1.5 歸零。
+            // 收窄之後乾淨間距是 3k，台數再多也分得開（見 Stations.WidthFactor）。
+            float k = Mathf.Max(0.01f, Stations.WidthFactor());
+
             float best = 0f;
             for (int i = 0; i < channels.Length; i++)
             {
                 RadioChannel ch = channels[i];
                 if (ch == null) continue;
 
-                float d = Mathf.Abs(freq - ch.Frequency) - 0.5f;
+                float d = Mathf.Abs(freq - ch.Frequency) / k - 0.5f;
                 d = Mathf.Clamp01(1f - d);
                 float vol = d * radioVol * Plugin.MusicVolume.Value;
 

@@ -36,8 +36,20 @@ namespace HtF.RadioMusic
     /// </summary>
     internal static class Stations
     {
-        /// <summary>兩台之間要多遠才不互相滲音。出自 ApplyVolume 的 ±1.5 衰減。</summary>
+        /// <summary>
+        /// 遊戲原本的曲線下，兩台要多遠才不互相滲音。
+        /// 出自 `ApplyVolume` 的 `Clamp01(1 - (|Δ| - 0.5))`——±0.5 滿音量、±1.5 歸零。
+        /// </summary>
         internal const float CleanSpacing = 3.0f;
+
+        /// <summary>自動模式最多建幾台。純粹是理智上限，一台就是一個 AudioSource。</summary>
+        private const int MaxAuto = 30;
+
+        /// <summary>寬度倍率的下限。再窄下去調台會變成不可能的精細動作。</summary>
+        private const float MinWidth = 0.1f;
+
+        /// <summary>我們鋪出來的頻道間距。0 = 沒有接手（設定是「不改」）。</summary>
+        internal static float Spacing;
 
         private static FieldInfo _fFrequency;
         private static bool _resolved;
@@ -103,16 +115,35 @@ namespace HtF.RadioMusic
             if (cfg > 0) return cfg;        // 使用者指定，即使會滲音也照做
 
             if (trackCount <= 0) return 0;  // 沒有自訂音樂就沒必要動
-            return Mathf.Clamp(trackCount, vanilla, MaxClean());
+
+            // 自動 = 一首歌一個頻率。**不再用間距夾住上限**——擠不擠得下不是靠少建幾台
+            // 解決的，是靠把衰減曲線收窄（見 WidthFactor）。這裡只留一個理智上限。
+            return Mathf.Clamp(trackCount, vanilla, MaxAuto);
         }
 
-        /// <summary>波段裡放得下幾個「不互相滲音」的頻道。</summary>
-        private static int MaxClean()
+        /// <summary>
+        /// 頻道寬度倍率：1 = 遊戲原本的衰減，越小越銳利。
+        ///
+        /// **這是「25 首歌塞不進 88–108」的解。** 遊戲的曲線是
+        /// `Clamp01(1 - (|Δ| - 0.5))`——±0.5 滿音量、±1.5 才歸零，所以兩台要隔 3.0
+        /// 才聽得乾淨，20 寬的波段最多 7 台。台數再多就一定重疊。
+        ///
+        /// 但那個 0.5 / 1.5 只是常數。把整條曲線按 <c>k</c> 收窄之後，
+        /// 乾淨間距變成 <c>3k</c>，於是**任何台數都能不重疊**——代價是調台越來越精細，
+        /// 那本來就是真的 FM 收音機的樣子。
+        ///
+        /// 自動模式取 <c>k = 實際間距 / 3</c>，剛好讓相鄰的台碰不到彼此。
+        /// </summary>
+        internal static float WidthFactor()
         {
-            float spacing = Plugin.MinSpacing != null ? Plugin.MinSpacing.Value : CleanSpacing;
-            if (spacing <= 0.01f) return 20;
-            return Mathf.Max(1, Mathf.FloorToInt(20f / spacing) + 1);
+            float cfg = Plugin.StationWidth != null ? Plugin.StationWidth.Value : 0f;
+            if (cfg > 0f) return cfg;                 // 使用者指定
+            if (Spacing <= 0f) return 1f;             // 我們沒接手頻道，別動遊戲的曲線
+            return Mathf.Clamp(Spacing / CleanSpacing, MinWidth, 1f);
         }
+
+        /// <summary>曲線有沒有被改過。沒有的話 postfix 就走原本那條便宜的路徑。</summary>
+        internal static bool HasCustomWidth() { return Mathf.Abs(WidthFactor() - 1f) > 0.0001f; }
 
         // ------------------------------------------------------------------ 建與改
 
@@ -262,12 +293,15 @@ namespace HtF.RadioMusic
             if (channels.Length == 1)
             {
                 _fFrequency.SetValue(channels[0], (band.x + band.y) * 0.5f);
+                Spacing = band.y - band.x;
                 return;
             }
 
             float step = (band.y - band.x) / (channels.Length - 1);
             for (int i = 0; i < channels.Length; i++)
                 _fFrequency.SetValue(channels[i], band.x + step * i);
+
+            Spacing = step;   // WidthFactor 要用它推自動寬度
         }
 
         private static Vector2 Band(Radio radio)
@@ -289,14 +323,16 @@ namespace HtF.RadioMusic
             _announcedFor = count;
 
             float step = count > 1 ? (band.y - band.x) / (count - 1) : 0f;
+            float k = WidthFactor();
             string line = "電台頻道改成 " + count + " 個，"
                           + band.x.ToString("0.#") + "–" + band.y.ToString("0.#")
-                          + " 之間每 " + step.ToString("0.##") + " 一台。";
+                          + " 之間每 " + step.ToString("0.##") + " 一台"
+                          + "，頻道寬度 ×" + k.ToString("0.###") + "。";
 
-            if (count > 1 && step < CleanSpacing)
-                Plugin.Log.LogWarning(line + " 間距小於 " + CleanSpacing
-                    + "，相鄰的台會互相滲音（ApplyVolume 的衰減到 ±1.5 才歸零）。"
-                    + "要乾淨的話把頻道數調低，或把「最小頻道間距」調小以接受這個結果。");
+            // 收窄之後的乾淨間距是 3k；還是塞不下才警告。
+            if (count > 1 && step < CleanSpacing * k - 0.001f)
+                Plugin.Log.LogWarning(line + " 這個間距在目前的寬度下仍然會互相滲音——"
+                    + "把「頻道寬度」調小（或設 0 讓它自動跟著間距走）就會分得開。");
             else
                 Plugin.Log.LogInfo(line);
         }

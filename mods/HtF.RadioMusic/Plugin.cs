@@ -30,7 +30,7 @@ namespace HtF.RadioMusic
         internal static ConfigEntry<float> NoiseVolume, MusicVolume;
         internal static ConfigEntry<bool> PlayThroughBoss, AutoAdvance, SyncPlayback;
         internal static ConfigEntry<int> ChannelCount;
-        internal static ConfigEntry<float> MinSpacing;
+        internal static ConfigEntry<float> StationWidth;
         internal static ConfigEntry<KeyboardShortcut> NextTrackKey, ReloadKey;
 
         private Harmony _harmony;
@@ -65,7 +65,7 @@ namespace HtF.RadioMusic
                 "By default the game mutes the whole radio when a boss shows up (both stations and noise drop to zero).\n"
                 + "Turn this on to recompute the volume and keep the music going.");
 
-            ChannelCount = Loc.Bind(Config, "頻道", "頻道數", -1, "Station Count",
+            ChannelCount = Loc.Bind(Config, "頻道", "頻道數", 0, "Station Count",
                 "−1 = 不改（用遊戲原本的頻道數）。0 = 自動，跟著曲目數走，"
                 + "但不超過波段放得下的數量。其他數字 = 指定幾個。\n"
                 + "頻道會平均攤在 88–108 上，所以「一首歌一個頻率」就是設 0。",
@@ -74,16 +74,19 @@ namespace HtF.RadioMusic
                 + "Stations are spread evenly across 88–108, so \"one song per frequency\" is just 0.",
                 new AcceptableValueRange<int>(-1, 20));
 
-            MinSpacing = Loc.Bind(Config, "頻道", "最小頻道間距", 3.0f, "Minimum Station Spacing",
-                "自動模式最多塞到這個間距為止。遊戲的音量算式是"
-                + "「誤差 0.5 以內滿音量、到 1.5 才完全消失」，所以相距 3.0 才聽得乾淨；"
-                + "調小會塞進更多台，但相鄰的會互相滲音。\n"
-                + "88–108 共 20，間距 3.0 就是最多 7 台。",
-                "How tightly automatic mode is allowed to pack the stations. The game's volume curve is "
-                + "full within 0.5 and only silent past 1.5, so 3.0 apart is the point where stations stop "
-                + "bleeding into each other. Lower it to fit more in at the cost of overlap.\n"
-                + "The band is 20 wide, so 3.0 means at most 7 stations.",
-                new AcceptableValueRange<float>(0.5f, 10f));
+            StationWidth = Loc.Bind(Config, "頻道", "頻道寬度", 0f, "Station Width",
+                "一台佔多寬。0 = 自動：跟著頻道間距走，讓相鄰的台剛好碰不到彼此。\n"
+                + "1 = 遊戲原本的寬度（誤差 0.5 以內滿音量、到 1.5 才完全消失），"
+                + "所以原版兩台要隔 3.0 才乾淨——88–108 只放得下 7 台。\n"
+                + "把它調小，乾淨間距也跟著變成 3×寬度，台數再多都分得開；"
+                + "代價是調台越來越精細（真的 FM 收音機就是這樣）。",
+                "How wide one station is. 0 = automatic: derived from the station spacing so neighbours "
+                + "just barely stop overlapping.\n"
+                + "1 = the game's own width (full volume within 0.5, silent past 1.5), which is why vanilla "
+                + "needs 3.0 between stations — only 7 fit in 88–108.\n"
+                + "Lower it and the clean spacing becomes 3x the width, so any number of stations can be "
+                + "separated; the cost is finer tuning, which is what a real FM dial feels like anyway.",
+                new AcceptableValueRange<float>(0f, 2f));
 
             AutoAdvance = Loc.Bind(Config, "聲音", "自動接下一首", true, "Auto-Advance Playlist",
                 "一個頻道分到多首歌時，像真的電台一樣自己接著播下去。\n"
@@ -128,7 +131,7 @@ namespace HtF.RadioMusic
             Config.SettingChanged += (s, e) =>
             {
                 // 頻道數變了要重建陣列，其餘設定重套曲目就夠。
-                if (e.ChangedSetting == ChannelCount || e.ChangedSetting == MinSpacing)
+                if (e.ChangedSetting == ChannelCount || e.ChangedSetting == StationWidth)
                     RadioPatcher.RebuildAll();
             };
 
