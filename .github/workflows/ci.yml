@@ -1,0 +1,123 @@
+# 持續整合。
+#
+# **完整編譯需要遊戲的 Managed 組件，而那份東西不在這個 repo 裡**——.gitignore
+# 開頭就寫了理由：那是別人的程式碼，不該由這裡散布。所以 CI 分成兩半：
+#
+#   checks  永遠會跑。不需要任何遊戲組件，查的是語法、GUID 撞號、README 表格
+#           和實際專案對不對得上。
+#   build   只有在設定好私有的參照組件來源時才會真的建置八個 mod；沒設定就
+#           留一則 notice 跳過，不會把 PR 弄紅。
+#
+# 要打開 build：把自己那份 `Managed/` 和 `BepInEx/core/` 放進一個**私有** repo
+# （不要放進這個公開 repo），然後設定
+#   repository variable  GAME_LIBS_REPO  = <owner>/<那個私有 repo>
+#   repository secret    GAME_LIBS_TOKEN = 讀得到它的 fine-grained PAT
+# 私有 repo 的版面就是這兩個資料夾放在根目錄。詳細步驟見 README 的「持續整合」。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一個分支連續推時，只留最後一次
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: 語法與文件
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+
+      # 用 Roslyn 把 mods/ 底下每個 .cs 剖析一次。這不是完整編譯——沒有遊戲組件
+      # 就沒有型別資訊，「找不到 Radio」這種錯誤要靠下面的 build job。
+      - name: C# 語法檢查
+        run: dotnet run --project .github/tools/SyntaxCheck -c Release -- mods
+
+      - name: 專案與文件對得上
+        run: python3 .github/tools/check_repo.py
+
+  build:
+    name: 建置八個 mod
+    runs-on: windows-latest
+    env:
+      # secret 不能直接寫在 step 的 if 裡，先接到 env 才判斷得到
+      GAME_LIBS_REPO: ${{ vars.GAME_LIBS_REPO }}
+      GAME_LIBS_TOKEN: ${{ secrets.GAME_LIBS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 取得遊戲參照組件（私有 repo）
+        id: libs
+        if: env.GAME_LIBS_REPO != '' && env.GAME_LIBS_TOKEN != ''
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.GAME_LIBS_REPO }}
+          token: ${{ secrets.GAME_LIBS_TOKEN }}
+          path: game-libs
+
+      - name: 沒設定就跳過
+        if: steps.libs.outcome == 'skipped'
+        run: echo "::notice::沒有設定遊戲參照組件，跳過建置（語法與文件檢查仍然有跑）。要打開它：把自己的 Managed/ 與 BepInEx/core/ 放進一個私有 repo，設定 variable GAME_LIBS_REPO 與 secret GAME_LIBS_TOKEN，步驟見 README 的「持續整合」。"
+
+      - uses: actions/setup-dotnet@v6
+        if: steps.libs.outcome == 'success'
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: 建置
+        if: steps.libs.outcome == 'success'
+        shell: pwsh
+        run: |
+          $managed = Join-Path $env:GITHUB_WORKSPACE 'game-libs\Managed'
+          $core    = Join-Path $env:GITHUB_WORKSPACE 'game-libs\BepInEx\core'
+          $out     = Join-Path $env:GITHUB_WORKSPACE 'artifacts'
+
+          # 先把話講清楚，不然錯誤會變成 Common.props 那條看不出前因後果的 CheckPaths
+          foreach ($pair in @(@($managed, 'Assembly-CSharp.dll'), @($core, 'BepInEx.dll'))) {
+            if (-not (Test-Path (Join-Path $pair[0] $pair[1]))) {
+              Write-Host "::error::$($pair[0]) 底下沒有 $($pair[1])。私有 repo 的版面要是根目錄放 Managed/ 和 BepInEx/core/。"
+              exit 1
+            }
+          }
+
+          # PluginOut 要蓋掉，不然 Common.props 的 DeployToProfile 會想寫到
+          # r2modman 的 profile——那是本機才有的路徑。
+          $mods = Get-ChildItem mods -Directory |
+                  Where-Object { Test-Path (Join-Path $_.FullName "$($_.Name).csproj") }
+          $failed = @()
+          foreach ($m in $mods) {
+            Write-Host "::group::$($m.Name)"
+            dotnet build "mods/$($m.Name)/$($m.Name).csproj" -c Release --nologo `
+              -p:GameManaged="$managed" `
+              -p:BepInExCore="$core" `
+              -p:PluginOut="$out\$($m.Name)"
+            if ($LASTEXITCODE -ne 0) { $failed += $m.Name }
+            Write-Host "::endgroup::"
+          }
+
+          if ($failed.Count -gt 0) {
+            Write-Host "::error::建置失敗：$($failed -join ', ')"
+            exit 1
+          }
+          Write-Host "$($mods.Count) 個 mod 建置成功。"
+
+      - name: 收走 DLL
+        if: steps.libs.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: HtF-Mods-${{ github.sha }}
+          path: artifacts
+          if-no-files-found: error
