@@ -70,6 +70,35 @@ def find_dll(mod, folder):
     return max(hits, key=os.path.getmtime)
 
 
+def newest_source_mtime(mod, folder):
+    """這個 mod 的所有輸入裡最新的修改時間。共用的 Shared/ 與 Common.props 也算。"""
+    paths = [os.path.join(folder, mod + ".csproj"),
+             os.path.join(MODS, "Common.props")]
+    paths += glob.glob(os.path.join(folder, "**", "*.cs"), recursive=True)
+    paths += glob.glob(os.path.join(MODS, "Shared", "*.cs"))
+    newest = 0.0
+    for p in paths:
+        if os.sep + "obj" + os.sep in p or os.sep + "bin" + os.sep in p:
+            continue
+        try:
+            newest = max(newest, os.path.getmtime(p))
+        except OSError:
+            pass
+    return newest
+
+
+def dll_is_stale(mod, folder, dll):
+    """
+    `--no-build` 用現成的 DLL，但「現成」不代表「是這個版本的」。
+
+    典型的踩法：把 .csproj 的 <Version> 從 1.0.0 改成 1.1.0，忘了重建，
+    然後 --no-build。manifest 對得上 csproj（check_repo 過），zip 的檔名也是
+    1.1.0，但裡面那顆 DLL 還是 1.0.0 的。送上 Thunderstore 之後那個版本號就
+    用掉了——這正是整個 repo 最不想發生的那件事，所以在這裡擋。
+    """
+    return os.path.getmtime(dll) < newest_source_mtime(mod, folder)
+
+
 def build(mod, folder, args):
     cmd = ["dotnet", "build", os.path.join(folder, mod + ".csproj"),
            "-c", "Release", "--nologo"]
@@ -97,6 +126,12 @@ def pack(mod, folder, out_dir):
     if dll is None:
         print("::error::%s 找不到建好的 DLL（bin/Release/*/）。"
               "拿掉 --no-build，或先自己建置一次。" % mod)
+        return None
+
+    if dll_is_stale(mod, folder, dll):
+        print("::error::%s 的 DLL 比原始碼舊（%s）。--no-build 會把這顆舊的包進 "
+              "%s-%s.zip，而版本號一旦送上 Thunderstore 就用掉了。"
+              "拿掉 --no-build 重建一次。" % (mod, os.path.basename(dll), pkg, version))
         return None
 
     zip_path = os.path.join(out_dir, "%s-%s.zip" % (pkg, version))
@@ -140,6 +175,22 @@ def write_notes(packed, out_dir):
     print("  RELEASE_NOTES.md")
 
 
+def unexpected_entries(out_dir):
+    """
+    `shutil.rmtree(args.out)` 遞迴刪除，而 --out 是命令列給的。
+    `--out .` 或 `--out mods` 打錯一次就沒了，所以先確認裡面**只有**這支腳本
+    自己產生的東西：zip、RELEASE_NOTES.md、暫存的 .build-deploy。
+    有別的就拒絕動手。
+    """
+    allowed_names = {"RELEASE_NOTES.md", ".build-deploy"}
+    bad = []
+    for name in sorted(os.listdir(out_dir)):
+        if name in allowed_names or name.endswith(".zip"):
+            continue
+        bad.append(name)
+    return bad
+
+
 def main():
     ap = argparse.ArgumentParser(description="打包 Thunderstore 套件")
     ap.add_argument("--out", default=os.path.join(REPO, "dist"))
@@ -172,6 +223,12 @@ def main():
             os.makedirs(args.out)
     else:
         if os.path.isdir(args.out):
+            unexpected = unexpected_entries(args.out)
+            if unexpected:
+                print("::error::%s 裡有不是這支腳本產生的東西（%s），不敢清空。"
+                      "--out 指到別的地方，或自己先確認過再刪。"
+                      % (args.out, "、".join(unexpected[:5])))
+                return 1
             shutil.rmtree(args.out)
         os.makedirs(args.out)
 

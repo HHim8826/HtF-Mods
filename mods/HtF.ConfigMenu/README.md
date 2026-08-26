@@ -24,7 +24,7 @@ first, then drop `HtF.ConfigMenu.dll` into `BepInEx/plugins/`.
 
 ## It owns the language setting
 
-The other seven HtF mods have bilingual interfaces and they all read **this one setting**. Set
+The other six HtF mods have bilingual interfaces and they all read **this one setting**. Set
 `Language` here and every one of them follows, live, without a restart. `Auto` follows whatever
 language the game itself is set to.
 
@@ -65,6 +65,6 @@ window is open.
 
 ## Links
 
-- [Source, and the other seven HtF mods](https://github.com/HHim8826/HtF-Mods)
+- [Source, and the other six HtF mods](https://github.com/HHim8826/HtF-Mods)
 - [Changelog](https://github.com/HHim8826/HtF-Mods/blob/main/mods/HtF.ConfigMenu/CHANGELOG.md)
 - MIT licensed

@@ -95,4 +95,17 @@ jobs:
           # PowerShell 不會替原生指令展開萬用字元，要自己列出來
           $zips = (Get-ChildItem dist/*.zip | ForEach-Object { $_.FullName })
           Write-Host "$tag：$($zips.Count) 個 zip"
-          gh release create $tag $zips --title $tag --notes-file dist/RELEASE_NOTES.md
+
+          # 同一個 tag 重跑（改完 workflow 重推、或手動 re-run）時，
+          # gh release create 會因為 Release 已存在而失敗。分成建立與更新兩條路，
+          # 這一步才是可以重跑的。
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "::notice::$tag 的 Release 已經存在，改成更新它。"
+            gh release upload $tag $zips --clobber
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            gh release edit $tag --notes-file dist/RELEASE_NOTES.md
+          } else {
+            gh release create $tag $zips --title $tag --notes-file dist/RELEASE_NOTES.md
+          }
+          if ($LASTEXITCODE -ne 0) { exit 1 }

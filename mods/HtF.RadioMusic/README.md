@@ -103,6 +103,6 @@ BepInEx log rather than silent no-ops.
 
 ## Links
 
-- [Source, and the other seven HtF mods](https://github.com/HHim8826/HtF-Mods)
+- [Source, and the other six HtF mods](https://github.com/HHim8826/HtF-Mods)
 - [Changelog](https://github.com/HHim8826/HtF-Mods/blob/main/mods/HtF.RadioMusic/CHANGELOG.md)
 - MIT licensed

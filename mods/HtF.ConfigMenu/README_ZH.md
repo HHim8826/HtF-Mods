@@ -21,7 +21,7 @@ BepInEx 會跟著一起裝。
 
 ## 語言設定的擁有者就是它
 
-另外七個 HtF mod 的介面都是中英雙語，而它們讀的都是**這一個設定**。在這裡把「語言」調好，
+另外六個 HtF mod 的介面都是中英雙語，而它們讀的都是**這一個設定**。在這裡把「語言」調好，
 全部即時跟著換，不用重開遊戲。「自動」＝跟著遊戲本身的語系走。
 
 沒裝這個 mod 的話，其他 mod 會自己跟著遊戲語系，功能不會壞——只是少了手動覆寫的開關。
@@ -58,6 +58,6 @@ BepInEx 靠它們找回你存的值，翻譯它們等於把每個調好的設定
 
 ## 連結
 
-- [原始碼，以及另外七個 HtF mod](https://github.com/HHim8826/HtF-Mods)
+- [原始碼，以及另外六個 HtF mod](https://github.com/HHim8826/HtF-Mods)
 - [更新記錄](https://github.com/HHim8826/HtF-Mods/blob/main/mods/HtF.ConfigMenu/CHANGELOG.md)
 - MIT 授權

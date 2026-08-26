@@ -122,6 +122,6 @@ BepInEx 靠它們找回你存的值，翻譯它們等於把每個調好的設定
 
 ## 連結
 
-- [原始碼，以及另外七個 HtF mod](https://github.com/HHim8826/HtF-Mods)
+- [原始碼，以及另外六個 HtF mod](https://github.com/HHim8826/HtF-Mods)
 - [更新記錄](https://github.com/HHim8826/HtF-Mods/blob/main/mods/HtF.HostRules/CHANGELOG.md)
 - MIT 授權
