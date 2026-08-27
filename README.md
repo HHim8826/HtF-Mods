@@ -15,7 +15,7 @@ language setting automatically.
 | `HtF.HudNumbers` | `HtF_HudNumbers` | `htf.hudnumbers` | 只有你自己 | 血量／飽食／手上物品／準心指向數值化（F6） |
 | `HtF.AmmoCounter` | `HtF_AmmoCounter` | `htf.ammocounter` | 只有你自己 | 手上槍械的剩餘子彈，數字／圓點（F10） |
 | `HtF.Guardian` | `HtF_Guardian` | `htf.guardian` | 只有房主 | ServerRpc 驗證層、速率限制、封鎖名單、監控面板（F11） |
-| `HtF.HostRules` | `HtF_HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值、抽魚權重、保底、咬鉤時間 |
+| `HtF.HostRules` | `HtF_HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值、死亡不掉落、抽魚權重、保底、咬鉤時間 |
 | `HtF.RadioMusic` | `HtF_RadioMusic` | `htf.radiomusic` | 只有你自己（同步播放則全員） | 收音機自訂音樂、一首歌一個頻率、自動接下一首、一起聽（F7／F8） |
 | `HtF.ConfigMenu` | `HtF_ConfigMenu` | `htf.configmenu` | 只有你自己 | 遊戲內設定管理頁面（通用，F9） |
 | `HtF.DazedTools` | `HtF_DazedTools` | `htf.dazedtools` | 只有你自己 | 遊戲內建 dev 指令的圖形介面（Insert） |
