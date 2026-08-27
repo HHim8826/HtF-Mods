@@ -115,6 +115,26 @@ python .github/tools/make_packages.py
 打包不會順手裝進你的 r2modman——`PluginOut` 會被蓋掉，
 `Common.props` 的 `DeployToProfile` 寫到 `dist/` 底下的暫存夾，結束時刪掉。
 
+#### 改過原始碼就要重新打包
+
+`dist/` 裡的 zip 是**某一次建置的快照**，不會自己跟著原始碼更新。改完程式碼直接重跑
+`make_packages.py` 就好（它預設會重新建置）。
+
+`--no-build` 有一道護欄：腳本會比對 DLL 與該 mod 所有輸入（自己的 `.cs`、`.csproj`、
+共用的 `Shared/*.cs` 與 `Common.props`）之中最新的修改時間，DLL 比較舊就擋下來。
+但那只擋得住「忘了重建」。
+
+**版本號已經上架過就不能重包同一號。** Thunderstore 的版本號用掉就是用掉了。所以
+改原始碼時先問一句：這個版本發布過了嗎？
+
+| 情況 | 要做的事 |
+|---|---|
+| 還沒發布過 | 直接重跑 `make_packages.py` |
+| 已經上架 | 先把 `.csproj` 的 `<Version>` 加一版、`manifest.json` 跟著改、`CHANGELOG.md` 補一條，再打包 |
+
+`check_repo.py` 會確認 `<Version>` 和 `manifest.json` 對得上，但它**沒辦法知道哪個版本
+已經送上 Thunderstore 了**——那一段只能靠這條規則。
+
 ### 發布
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml)：
