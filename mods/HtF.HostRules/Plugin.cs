@@ -51,6 +51,9 @@ namespace HtF.HostRules
         internal static ConfigEntry<int> HealthOnRes, FullnessOnRes;
         internal static ConfigEntry<float> InvulnAfterDamage;
 
+        // 死亡與暈倒
+        internal static ConfigEntry<bool> KeepInventoryOnDeath;
+
         // 釣魚生態
         internal static ConfigEntry<bool> FishingEnabled;
         internal static ConfigEntry<float> RareMultiplier, CommonMultiplier, BossMultiplier;
@@ -84,6 +87,7 @@ namespace HtF.HostRules
             Loc.Section("難度乘數", "Difficulty Multipliers");
             Loc.Section("規則", "Rules");
             Loc.Section("玩家數值", "Player Stats");
+            Loc.Section("死亡", "Death");
             Loc.Section("釣魚", "Fishing");
             Loc.Section("除錯", "Debug");
 
@@ -163,6 +167,7 @@ namespace HtF.HostRules
                 "Seconds. −1 = leave alone. The game default is 0.25.",
                 new AcceptableValueRange<float>(-1f, 5f));
 
+            BindDeath();
             BindFishing();
 
             // 改設定後立刻套用，不用重開房間。
@@ -180,12 +185,32 @@ namespace HtF.HostRules
 
             _harmony = new Harmony(Guid);
             _harmony.PatchAll(typeof(Patches));
+            _harmony.PatchAll(typeof(DeathRules));
             Patches.VerifyTargets();
+            DeathRules.ApplyRespawnScope(_harmony);
 
             _fishingHarmony = new Harmony(Guid + ".fishing");
             _fishingHarmony.PatchAll(typeof(FishingPatches));
 
             Log.LogInfo("Host Rules 已載入（釣魚生態 " + (FishingEnabled.Value ? "開" : "關") + "）。");
+        }
+
+        /// <summary>
+        /// 死亡時背包的去向。預設關閉——它改的是遊戲的核心懲罰機制，房主要自己決定。
+        ///
+        /// 只有這一個設定。「暈倒不掉手上的東西」試過但做不到，理由記在
+        /// <see cref="DeathRules"/> 的類別註解裡。
+        /// </summary>
+        private void BindDeath()
+        {
+            KeepInventoryOnDeath = Loc.Bind(Config, "死亡", "死亡不掉落背包", false, "Keep Inventory On Death",
+                "放棄重生時不再把背包和手上的東西全部掉在地上。\n"
+                + "注意遊戲原本的規則：全員陣亡時，是**每一位玩家**都掉一次，不是只有放棄的那個人。\n"
+                + "這一項不影響 DazedTools 的「掉光所有物品」指令，那是刻意送出的。",
+                "Giving up and respawning no longer drops your whole inventory and the item in your hands.\n"
+                + "Note the vanilla rule: when everyone is down, *every* player drops, not just the one who gave up.\n"
+                + "This does not affect the deliberate drop-all command in DazedTools.");
+
         }
 
         /// <summary>

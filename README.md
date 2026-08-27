@@ -15,7 +15,7 @@ language setting automatically.
 | `HtF.HudNumbers` | `HtF_HudNumbers` | `htf.hudnumbers` | 只有你自己 | 血量／飽食／手上物品／準心指向數值化（F6） |
 | `HtF.AmmoCounter` | `HtF_AmmoCounter` | `htf.ammocounter` | 只有你自己 | 手上槍械的剩餘子彈，數字／圓點（F10） |
 | `HtF.Guardian` | `HtF_Guardian` | `htf.guardian` | 只有房主 | ServerRpc 驗證層、速率限制、封鎖名單、監控面板（F11） |
-| `HtF.HostRules` | `HtF_HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值、抽魚權重、保底、咬鉤時間 |
+| `HtF.HostRules` | `HtF_HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值、死亡不掉落背包、抽魚權重、保底、咬鉤時間 |
 | `HtF.RadioMusic` | `HtF_RadioMusic` | `htf.radiomusic` | 只有你自己（同步播放則全員） | 收音機自訂音樂、一首歌一個頻率、自動接下一首、一起聽（F7／F8） |
 | `HtF.ConfigMenu` | `HtF_ConfigMenu` | `htf.configmenu` | 只有你自己 | 遊戲內設定管理頁面（通用，F9） |
 | `HtF.DazedTools` | `HtF_DazedTools` | `htf.dazedtools` | 只有你自己 | 遊戲內建 dev 指令的圖形介面（Insert） |
@@ -41,6 +41,21 @@ dotnet build mods/HtF.HudNumbers/HtF.HudNumbers.csproj \
 ```
 
 建置後會自動部署到 r2modman 的 profile。預設路徑寫在 `mods/Common.props`。
+
+**「裝進自己的遊戲」和「打包」是兩件事，別搞混：**
+
+| 想做什麼 | 指令 |
+|---|---|
+| 改完程式碼，進遊戲試 | `dotnet build ... -c Release`（**不要**加 `-p:PluginOut`） |
+| 產生要上傳的 zip | `python .github/tools/make_packages.py` |
+| 兩件事一起 | `python .github/tools/make_packages.py --deploy` |
+
+打包腳本**刻意**把 `PluginOut` 導去暫存資料夾，讓打包沒有副作用。代價是它不會更新你的
+profile——只跑打包的話，`dist/` 是新的，你實際載入的那份還是舊的。`--deploy` 就是為了
+這個而存在。
+
+遊戲開著時 DLL 會被鎖住，而 `Copy` 有 `ContinueOnError="true"`，會**靜靜跳過**。
+所以建置前先關掉遊戲；`--deploy` 沒看到部署訊息時會留一則 warning。
 
 ## 發布到 Thunderstore
 
@@ -110,6 +125,7 @@ python .github/tools/make_packages.py
 |---|---|
 | `--no-build` | 不重新建置，用 `bin/Release` 底下現成的 DLL |
 | `--only HtF.Guardian` | 只重包一個。這時不會清掉 `dist/` 裡的其他 zip，也不會動 `RELEASE_NOTES.md` |
+| `--deploy` | 打包完順便部署到本機的 r2modman profile（遊戲要先關掉） |
 | `--game-managed` / `--bepinex-core` | 覆寫參照組件的路徑 |
 
 打包不會順手裝進你的 r2modman——`PluginOut` 會被蓋掉，

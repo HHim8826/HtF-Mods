@@ -118,6 +118,45 @@ def build(mod, folder, args):
     return True
 
 
+def deploy(mod, folder, args):
+    """
+    再建置一次，這次**不蓋掉 PluginOut**，讓 Common.props 的 DeployToProfile
+    把 DLL 複製進 r2modman 的 profile。
+
+    為什麼是重跑 dotnet build 而不是自己複製檔案：profile 的路徑是 Common.props
+    裡的 MSBuild 屬性（$(AppData) 展開），在這裡自己拼一份就多一個會不同步的地方。
+    是增量建置，第二次幾乎不花時間。
+
+    **遊戲開著時 DLL 會被鎖住。** Copy 有 ContinueOnError="true"，會靜靜跳過，
+    所以這裡自己比對一次時間戳，沒更新到就講出來——不然看起來像成功。
+    """
+    before = None
+    dll = find_dll(mod, folder)
+    if dll is not None:
+        before = os.path.getmtime(dll)
+
+    cmd = ["dotnet", "build", os.path.join(folder, mod + ".csproj"), "-c", "Release", "--nologo"]
+    if args.game_managed:
+        cmd.append("-p:GameManaged=" + args.game_managed)
+    if args.bepinex_core:
+        cmd.append("-p:BepInExCore=" + args.bepinex_core)
+
+    proc = subprocess.run(cmd, cwd=REPO, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, universal_newlines=True)
+    if proc.returncode != 0:
+        print(proc.stdout)
+        return False
+
+    for line in proc.stdout.splitlines():
+        if "已部署" in line or "Deployed" in line:
+            print("  " + line.strip())
+            return True
+
+    print("::warning::%s 沒有看到部署訊息。遊戲開著的話 DLL 會被鎖住，"
+          "Copy 會靜靜跳過——關掉遊戲再跑一次。" % mod)
+    return True
+
+
 def pack(mod, folder, out_dir):
     manifest = json.loads(read(os.path.join(folder, "manifest.json")))
     pkg, version = manifest["name"], manifest["version_number"]
@@ -198,6 +237,8 @@ def main():
                     help="只做這個 mod，可重覆")
     ap.add_argument("--no-build", action="store_true",
                     help="不建置，直接用 bin/Release 底下現成的 DLL")
+    ap.add_argument("--deploy", action="store_true",
+                    help="打包完順便部署到本機的 r2modman profile（遊戲要先關掉）")
     ap.add_argument("--game-managed", help="遊戲的 Managed 資料夾")
     ap.add_argument("--bepinex-core", help="BepInEx 的 core 資料夾")
     args = ap.parse_args()
@@ -246,6 +287,12 @@ def main():
             packed.append(info)
 
     shutil.rmtree(os.path.join(args.out, ".build-deploy"), ignore_errors=True)
+
+    if args.deploy and not failed:
+        print("\n部署到 r2modman profile")
+        for mod in sorted(mods):
+            if not deploy(mod, mods[mod], args):
+                failed.append(mod)
 
     if failed:
         print("\n::error::失敗：%s" % ", ".join(failed))

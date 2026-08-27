@@ -1,8 +1,8 @@
 {
   "name": "HtF_HostRules",
-  "version_number": "1.1.0",
+  "version_number": "1.2.0",
   "website_url": "https://github.com/HHim8826/HtF-Mods",
-  "description": "Stepless difficulty and host rules: creature health, damage taken, friendly fire, one-shot kills, hunger, regen, poison, fire, PvP damage, revive values, plus catch weights and bite time. Host only. English / 繁體中文.",
+  "description": "Stepless difficulty and host rules: creature health, damage taken, friendly fire, one-shot kills, hunger, regen, PvP damage, revive values, keeping your items on death, plus catch weights and bite time. Host only. EN / 繁體中文.",
   "dependencies": [
     "BepInEx-BepInExPack-5.4.2305"
   ]

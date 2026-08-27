@@ -2,6 +2,20 @@
 
 All notable changes to this package. Versions follow [semantic versioning](https://semver.org/).
 
+## 1.2.0
+
+- **Keep Inventory On Death** (new, under `Death`, **off by default**). Giving up and respawning no
+  longer drops your whole inventory and the item in your hands. Note the vanilla rule this switches
+  off: when everyone is down, *every* player drops, not just the one who gave up.
+
+  The deliberate drop-all command in `HtF_DazedTools` still works — only the drop that respawning
+  causes is suppressed.
+
+There is deliberately **no** "keep the item in your hands when you go down" setting. The downed
+player's own client drops it locally without asking the server, so no host-side mod can stop it, and
+making the server hold onto the item anyway leaves it unpickupable by anyone and unrecoverable by
+its owner — worse than letting it fall. The full reasoning is in `DeathRules.cs`.
+
 ## 1.1.0
 
 - Absorbed the fishing half of `HtF.Economy`: catch weights (rare / common / boss multipliers,

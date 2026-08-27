@@ -20,29 +20,6 @@ game modded. BepInEx comes along as a dependency.
 **Manual.** Install [BepInEx 5.4.23.5](https://thunderstore.io/c/how-to-fish/p/BepInEx/BepInExPack/)
 first, then drop `HtF.HostRules.dll` into `BepInEx/plugins/`.
 
-## Upgrading from HtF.Economy
-
-The fishing half of `HtF.Economy` lives here now. It was never really *economy*: catch weights,
-pity and bite time are rules the host sets for the whole lobby, and they take effect in exactly the
-same place as the difficulty multipliers — so having them in a second mod only meant opening two
-settings pages to tune one thing.
-
-**If `HtF.Economy` or `HtF.FishingEcology` is still installed, delete it.** All three patch
-`CreatureManager.GetRandomItem` the same way, and two of them loaded at once make the multipliers
-compound. The bite time is worse: each side snapshots `BaitInfo._catchTimeMinMax` and multiplies, so
-whichever applies second records the *already modified* value as the original and can no longer put
-it back. Neither produces an error.
-
-When this mod spots one, it **disables its own fishing half** and says so in the log, so nothing can
-compound while you sort it out. Difficulty, rules and player stats keep working. Delete the old
-plugin folder and restart the game to get fishing back.
-
-`HtF.Economy`'s money half — sell price multiplier, cost multiplier, starting money for new saves —
-was **removed**, not moved. If you were using those, this release drops them.
-
-Your old `htf.economy.cfg` does not carry over: the plugin GUID is different, so BepInEx writes a
-fresh file. The setting names are unchanged, so they are quick to re-enter.
-
 ## Settings
 
 `BepInEx/config/htf.hostrules.cfg`, written on first run. Everything is also editable in game
@@ -80,6 +57,36 @@ actually means.
 | Health On Revive | −1 | Absolute override, −1 = leave alone. Vanilla is 25 |
 | Fullness On Revive | −1 | Absolute override, −1 = leave alone. Vanilla is 10 |
 | Invulnerability After Damage | −1 | Seconds. −1 = leave alone. Vanilla is 0.25 |
+
+### Death
+
+| Setting | Default | |
+|---|---|---|
+| Keep Inventory On Death | off | Giving up and respawning no longer drops your inventory and held item |
+
+**Off by default** — it removes one of the game's core penalties, so you have to ask for it.
+
+Worth knowing what it switches off: in vanilla, when *everyone* is down, the respawn drops
+**every player's** inventory, not just that of the person who gave up.
+
+It does not affect the deliberate drop-all command in
+[HtF Dazed Tools](https://github.com/HHim8826/HtF-Mods/tree/main/mods/HtF.DazedTools) — that one is
+something you asked for, so it still works.
+
+#### There is no "keep the item in your hands when you go down"
+
+The game drops items down two unrelated paths, and only one of them is reachable from the host:
+
+| What happens | What the game does | Can the host change it? |
+|---|---|---|
+| You give up and respawn | `PlayerInventory.ServerDropAll` drops the held item **and the whole inventory** | Yes — that is the setting above |
+| You go down into the revivable body | `PlayerDying.ServerDie` releases **the item in your hands** | **No** |
+
+The second one is not an oversight. The downed player's **own client** runs
+`PlayerDying.LocalDie`, which drops the held item locally without asking the server, and no host-side
+mod can reach that line on someone else's machine. Making the server hold onto the item anyway
+leaves it in a state where nobody can pick it up and its owner cannot get it back — strictly worse
+than letting it fall. The reasoning is written out in `DeathRules.cs` so nobody tries it again.
 
 ### Fishing
 
