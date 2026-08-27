@@ -9,7 +9,7 @@
 | `HtF.HudNumbers` | `HtF_HudNumbers` | `htf.hudnumbers` | 只有你自己 | 血量／飽食／物品數值化 |
 | `HtF.AmmoCounter` | `HtF_AmmoCounter` | `htf.ammocounter` | 只有你自己 | 手上槍械的剩餘子彈 |
 | `HtF.Guardian` | `HtF_Guardian` | `htf.guardian` | 只有房主 | ServerRpc 驗證層、速率限制、踢出／封鎖 |
-| `HtF.HostRules` | `HtF_HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值、死亡不掉落、抽魚權重、保底、咬鉤時間 |
+| `HtF.HostRules` | `HtF_HostRules` | `htf.hostrules` | 只有房主 | 無段式難度、規則開關、玩家數值、死亡不掉落背包、抽魚權重、保底、咬鉤時間 |
 | `HtF.RadioMusic` | `HtF_RadioMusic` | `htf.radiomusic` | 只有你自己（同步播放則全員） | 收音機自訂音樂、自動接下一首、一起聽、雜訊與音量 |
 | `HtF.ConfigMenu` | `HtF_ConfigMenu` | `htf.configmenu` | 只有你自己 | 遊戲內設定管理頁面（通用） |
 | `HtF.DazedTools` | `HtF_DazedTools` | `htf.dazedtools` | 只有你自己 | ServerRPC 指令工具（見該資料夾的 README） |
@@ -225,9 +225,9 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
 **做不到的**：提高生命上限。`Regenerate()` 裡的回血上限是寫死的字面值 `100`，
 不是可調欄位，所以只改起始生命會得到一個半殘的結果——寧可不做。
 
-### 死亡與暈倒時物品的去向（1.2.0）
+### 死亡不掉落背包（1.2.0）
 
-遊戲掉東西走的是**兩條互不相干的路**，這是這個功能唯一需要先搞懂的事：
+遊戲掉東西走的是**兩條互不相干的路**：
 
 | 事件 | 路徑 | 掉什麼 |
 |---|---|---|
@@ -235,31 +235,54 @@ public int MaxHp => (int)((float)this._maxHp * ServerSettings.HealthMultiplier);
 | 死亡（放棄、重生） | `Server.RpcLogic___RespawnPlayer` → `PlayerInventory.ServerDropAll` | 手上的**加整個背包** |
 
 而且 `RespawnPlayer` 在**全員陣亡**時會對每一位玩家各跑一次 `ServerDropAll`，
-不是只有按下放棄的那個人。兩條都只在伺服器端跑，所以房主裝就夠。
+不是只有按下放棄的那個人。
 
-**「死亡不掉落背包」不是把 `ServerDropAll` 關掉。** 同一個方法也是 `DropAllItems`
-這條 ServerRpc 的落點（`HtF.DazedTools` 的「掉光所有物品」走那裡），整個關掉會把一個
-刻意送出的指令一起弄壞。改成用呼叫堆疊上的旗標分辨：`RespawnPlayer` 的 prefix 立起、
-postfix 放下，`ServerDropAll` 的 prefix 只擋旗標立著的那一次。和 `HtF.Guardian` 的
-`Sender.Begin/End` 是同一招。
+**這個設定只管第二條。**
 
-**「暈倒不掉手上的東西」是收進背包，不是留在手上**——留在手上做不到。倒下的人**自己的
-客戶端**會跑 `PlayerDying.LocalDie`，裡面無條件對 `HeldItem` 呼叫 `Drop(false, ...)`，
-那是純本機的表現（`calledFromLocal = false` 那條路不送 RPC），房主端擋不到別人機器上的
-那一行。
+**不是把 `ServerDropAll` 關掉。** 同一個方法也是 `DropAllItems` 這條 ServerRpc 的落點
+（`HtF.DazedTools` 的「掉光所有物品」走那裡），整個關掉會把一個刻意送出的指令一起弄壞。
+改成用呼叫堆疊上的旗標分辨：`RespawnPlayer` 的 prefix 立起、finalizer 放下，
+`ServerDropAll` 的 prefix 只擋旗標立著的那一次。
 
-但 `LocalDie` 的第一件事是 `Inventory.ApplySlot(-1)`，而 `ApplySlot` 對**已經在背包裡**的
-手持物走的是收納那條路（`Hands.DropItem` + `Holding.SetHeldItem(null)`），走完 `HeldItem`
-就是 null，後面那個 `Drop` 根本不會執行。所以只要伺服器端先把它塞進背包，客戶端自己就
-不會演出掉落。
+⚠ **放旗標的那一半必須是 `[HarmonyFinalizer]`，不能是 postfix。** postfix 在原方法丟例外時
+**不會執行**，而 `RpcLogic___RespawnPlayer` 裡有 `BoatManager.Instance.TryMoveBoat` 這種會丟的
+東西。漏放一次，旗標這輩子都放不下來（prefix 只設 true），`ServerDropAll` 從此永遠被擋——
+連 DazedTools 那個指令也一起壞掉，正好是這個設計想保護的東西。回傳 void 的 finalizer 不會
+吞掉例外，只是保證跑得到。
 
-⚠ **光在 prefix 塞進背包沒有用**，原方法會自己撤銷掉：`ServerDie` 最後那段的
-`SetSyncedHolder(null, false)` 裡有一條「舊持有者的背包有這件就先 `RemoveItem`」的分支
-（`Item.cs`）。所以還要 patch `Item.SetSyncedHolder`，在 `ServerDie` 的堆疊裡、而且是
-「把持有者清成 null」的那一種呼叫才擋——範圍收得越窄越好，其餘交接／撿拾／丟棄都照常。
+`HtF.Guardian` 的 `Sender.Begin/End` 是同一個 prefix/postfix 型樣，同樣有這個弱點；
+差別是 `Begin` 每次都無條件覆寫 `Current`，下一條 RPC 就把它修回來，所以影響窄很多
+（見該 mod 的說明）。
 
-`[未驗證]` `LocalDie` 是客戶端用本機血量預測觸發的，可能比背包的同步先到，
-那一瞬間會看到東西掉出來、同步追上才回到背包。實際上有多明顯要進遊戲才知道。
+### 為什麼沒有「暈倒不掉手上的東西」
+
+試過，做不到，推導記在這裡免得再試一次。
+
+倒下的人**自己的客戶端**會跑 `PlayerDying.LocalDie`，裡面無條件對 `HeldItem` 呼叫
+`Drop(false, ...)`。那是純本機的表現（`calledFromLocal = false` 那條路不送 RPC），
+房主端擋不到別人機器上的那一行。
+
+曾經以為有繞法：`LocalDie` 的第一行是 `Inventory.ApplySlot(-1)`，而收納那條路
+（`Hands.DropItem` + `Holding.SetHeldItem(null)`）走完之後 `HeldItem` 就是 null，
+後面那個 `Drop` 不會執行——只要伺服器端搶先把物品塞進背包就好。**這個推論是錯的**，
+三個地方都對不上：
+
+1. `ApplySlot`（`PlayerInventory.cs:513-532`）只切 `_localCurSlot` 然後送
+   `Server.SelectInvSlot`。收納其實在 `UpdateHeldItem`（同檔 `637-642`），要經過
+   ServerRpc → SyncVar OnChange 一整趟網路來回才到得了，而 `LocalDie` 的 `Drop` 是
+   **同一個呼叫堆疊裡的下一行**，一定先跑。
+2. 就算等得到，`OnCurSlotChange` 開頭是 `if (prev == -1 && next == -1) return;`。
+   從地上撿起來拿在手上時 `prev` 本來就是 −1（`Item.cs:996` 撿起時已經
+   `ServerSetSyncedCurSlot(-1)` 過），傳 −1 進去等於什麼都沒發生。
+3. `PlayerInventory.AddItem` 只寫 `_items[index] = item`，**不設 `IsInInventory`**
+   （那是 `Item.PutInInventory` 做的）、也**不清 `Holding.HeldItem`**。
+
+硬做的結果是一件**永久撿不回來**的物品：`_syncedHolder` 沒被清掉，所以
+`Item.SetSyncedHolder` 第一道守衛（`Item.cs:976`）擋掉所有新持有者；而 `IsInInventory`
+是 false、`Holder` 是 null，所以 `UpdateHeldItem`（`PlayerInventory.cs:622`）會把它抹成 null，
+自己也拿不回來。**比原本掉在地上可以撿回來還糟**，所以這個功能不做。
+
+要做的話，得讓每個客戶端也裝一份東西去攔它自己的 `LocalDie`——那就不是「房主規則」了。
 
 ### 釣魚生態（1.1.0 從 HtF.Economy 併進來）
 

@@ -52,7 +52,7 @@ namespace HtF.HostRules
         internal static ConfigEntry<float> InvulnAfterDamage;
 
         // 死亡與暈倒
-        internal static ConfigEntry<bool> KeepInventoryOnDeath, KeepHeldItemWhenDowned;
+        internal static ConfigEntry<bool> KeepInventoryOnDeath;
 
         // 釣魚生態
         internal static ConfigEntry<bool> FishingEnabled;
@@ -196,8 +196,10 @@ namespace HtF.HostRules
         }
 
         /// <summary>
-        /// 死亡與暈倒時物品的去向。兩個都預設關閉——它們改的是遊戲的核心懲罰機制，
-        /// 房主要自己決定要不要拿掉。
+        /// 死亡時背包的去向。預設關閉——它改的是遊戲的核心懲罰機制，房主要自己決定。
+        ///
+        /// 只有這一個設定。「暈倒不掉手上的東西」試過但做不到，理由記在
+        /// <see cref="DeathRules"/> 的類別註解裡。
         /// </summary>
         private void BindDeath()
         {
@@ -209,16 +211,6 @@ namespace HtF.HostRules
                 + "Note the vanilla rule: when everyone is down, *every* player drops, not just the one who gave up.\n"
                 + "This does not affect the deliberate drop-all command in DazedTools.");
 
-            KeepHeldItemWhenDowned = Loc.Bind(Config, "死亡", "暈倒不掉手上的東西", false, "Keep Held Item When Downed",
-                "被打倒（變成地上那具可以被救起的身體）時，手上那件會**收進背包**而不是掉在地上。\n"
-                + "背包滿了就還是會掉——沒有位置可以放。\n"
-                + "收進背包而不是留在手上，是因為留在手上做不到：倒下的人自己的客戶端會演出掉落，\n"
-                + "房主端管不到那一行。收進背包則會讓那段程式自己改走收納，不會演出掉落。",
-                "When you go down (into the revivable body on the ground), the item in your hands is "
-                + "**put into your inventory** instead of dropping.\n"
-                + "If the inventory is full it still drops - there is nowhere to put it.\n"
-                + "It goes into the inventory rather than staying in your hands because staying in your hands "
-                + "is not possible from the host side: the downed player's own client plays the drop locally.");
         }
 
         /// <summary>

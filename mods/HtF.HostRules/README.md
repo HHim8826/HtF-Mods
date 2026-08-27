@@ -60,27 +60,33 @@ actually means.
 
 ### Death
 
-Both are **off by default** — they remove one of the game's core penalties, so you have to ask.
-
 | Setting | Default | |
 |---|---|---|
 | Keep Inventory On Death | off | Giving up and respawning no longer drops your inventory and held item |
-| Keep Held Item When Downed | off | Going down puts the item in your hands into your inventory instead of dropping it. If the inventory is full it still drops |
 
-The two cover **different** things, because the game drops items down two unrelated paths:
+**Off by default** — it removes one of the game's core penalties, so you have to ask for it.
 
-| What happens | What the game does | Which setting |
-|---|---|---|
-| You go down into the revivable body | `PlayerDying.ServerDie` releases **the item in your hands**. The inventory is untouched | Keep Held Item When Downed |
-| You give up and respawn | `PlayerInventory.ServerDropAll` drops **the held item and the whole inventory** | Keep Inventory On Death |
-
-Worth knowing about the second one: in vanilla, when *everyone* is down, the respawn drops
-**every player's** inventory, not just that of the person who gave up. Keep Inventory On Death
-switches that off too.
+Worth knowing what it switches off: in vanilla, when *everyone* is down, the respawn drops
+**every player's** inventory, not just that of the person who gave up.
 
 It does not affect the deliberate drop-all command in
 [HtF Dazed Tools](https://github.com/HHim8826/HtF-Mods/tree/main/mods/HtF.DazedTools) — that one is
 something you asked for, so it still works.
+
+#### There is no "keep the item in your hands when you go down"
+
+The game drops items down two unrelated paths, and only one of them is reachable from the host:
+
+| What happens | What the game does | Can the host change it? |
+|---|---|---|
+| You give up and respawn | `PlayerInventory.ServerDropAll` drops the held item **and the whole inventory** | Yes — that is the setting above |
+| You go down into the revivable body | `PlayerDying.ServerDie` releases **the item in your hands** | **No** |
+
+The second one is not an oversight. The downed player's **own client** runs
+`PlayerDying.LocalDie`, which drops the held item locally without asking the server, and no host-side
+mod can reach that line on someone else's machine. Making the server hold onto the item anyway
+leaves it in a state where nobody can pick it up and its owner cannot get it back — strictly worse
+than letting it fall. The reasoning is written out in `DeathRules.cs` so nobody tries it again.
 
 ### Fishing
 
