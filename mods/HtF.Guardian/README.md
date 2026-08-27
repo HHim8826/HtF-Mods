@@ -64,7 +64,7 @@ RpcLogic___X(a, b, c)
         v
    (the original logic)
         |
-        |  (3) reader postfix: Sender.End()
+        |  (3) reader finalizer: Sender.End()
 ```
 
 | File | Role |
@@ -126,6 +126,21 @@ FishNet treats *any* exception thrown while parsing or executing an RPC as malfo
 So the guards only do null checks, comparisons and connection matching; anything that needs
 reflection or a scene scan is wrapped in its own try/catch. **A bug in the guard must not turn into
 a kick.**
+
+### The reader teardown is a finalizer, not a postfix
+
+Step (3) above has to run even when the reader throws, and a Harmony **postfix does not run on an
+exception** — while a reader is exactly the code that parses bytes off the network, so malformed
+packets, destroyed references and other mods patching the same method can all make it throw.
+
+Missing one `Sender.End()` does not just lose a single check: `Sender.Current` keeps **the previous
+sender**, and the game itself sends RPCs on everyone's behalf from the server in several places
+(explosion damage, expired explosives, boss attacks). Until the next reader arrives, those internal
+calls get validated as though that player had sent them.
+
+The window is narrow — `Sender.Begin` overwrites unconditionally, so the next RPC repairs it — but
+that is convergence by luck rather than by design. A finalizer with a void return runs either way
+and does not swallow the exception.
 
 ## What is checked
 

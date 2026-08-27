@@ -148,7 +148,7 @@ namespace HtF.Guardian
         private static void PatchReaders(Harmony harmony, MethodInfo[] all)
         {
             var pre = new HarmonyMethod(AccessTools.Method(typeof(Guards), nameof(Guards.ReaderPrefix)));
-            var post = new HarmonyMethod(AccessTools.Method(typeof(Guards), nameof(Guards.ReaderPostfix)));
+            var fin = new HarmonyMethod(AccessTools.Method(typeof(Guards), nameof(Guards.ReaderFinalizer)));
 
             foreach (MethodInfo m in all)
             {
@@ -162,7 +162,9 @@ namespace HtF.Guardian
 
                 try
                 {
-                    harmony.Patch(m, pre, post);
+                    // 具名參數：Patch 的第三個位置參數是 postfix，而這裡要的是
+                    // finalizer——原方法丟例外時 postfix 不會跑，Sender 會漏放。
+                    harmony.Patch(m, prefix: pre, finalizer: fin);
                     ReadersPatched++;
                 }
                 catch (Exception e)

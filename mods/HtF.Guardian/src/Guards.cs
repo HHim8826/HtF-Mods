@@ -33,7 +33,21 @@ namespace HtF.Guardian
         /// </summary>
         internal static void ReaderPrefix(NetworkConnection __2) { Sender.Begin(__2); }
 
-        internal static void ReaderPostfix() { Sender.End(); }
+        /// <summary>
+        /// **這一半必須掛成 finalizer，不能是 postfix。** postfix 在原方法丟例外時
+        /// 不會執行，而 reader 做的正是解析網路來的位元組——畸形封包、被銷毀的
+        /// 參照、別的 mod patch 了同一段，都可能讓它丟出來。
+        ///
+        /// 漏放一次的後果不是「這一條 RPC 沒守到」：<see cref="Sender.Current"/>
+        /// 會**留著上一個發送端**，而遊戲本身有好幾處是在伺服器端代所有人送 RPC 的
+        /// （爆炸傷害、引信到期的炸藥、Boss 攻擊）。在下一條 reader 進來之前，
+        /// 那些內部呼叫會被當成「那個玩家送的」來驗證。
+        ///
+        /// 曝險窗口確實窄——<see cref="Sender.Begin"/> 每次都無條件覆寫，
+        /// 下一條 RPC 就修回來——但那是靠巧合收斂，不是靠設計。
+        /// 回傳 void 的 finalizer 不會吞掉例外，只是保證跑得到。
+        /// </summary>
+        internal static void ReaderFinalizer() { Sender.End(); }
 
         // ================================================================== 面板
 

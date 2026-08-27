@@ -59,7 +59,7 @@ RpcLogic___X(a, b, c)
         ▼
    （原本的邏輯）
         │
-        │  ③ reader postfix：Sender.End()
+        │  ③ reader finalizer：Sender.End()
 ```
 
 | 檔案 | 作用 |
@@ -116,6 +116,19 @@ FishNet 把「RPC 解析／執行期間丟出任何例外」當成惡意封包�
 
 所以守衛裡只有 null 檢查、比大小、比連線；需要反射或掃場景的部分都關在
 自己的 try/catch 裡。**守衛自己的 bug 不該變成踢人。**
+
+### reader 的收尾是 finalizer，不是 postfix
+
+上面第 ③ 步在原方法丟例外時**也必須跑**，而 Harmony 的 **postfix 遇例外不會執行**——
+偏偏 reader 做的正是解析網路來的位元組，畸形封包、被銷毀的參照、別的 mod patch 了
+同一段，都可能讓它丟出來。
+
+漏放一次 `Sender.End()` 的後果不只是「這一條 RPC 沒守到」：`Sender.Current` 會**留著
+上一個發送端**，而遊戲本身有好幾處是在伺服器端代所有人送 RPC 的（爆炸傷害、引信到期的
+炸藥、Boss 攻擊）。在下一條 reader 進來之前，那些內部呼叫會被當成「那個玩家送的」來驗證。
+
+曝險窗口確實窄——`Sender.Begin` 每次都無條件覆寫，下一條 RPC 就修回來——但那是靠巧合
+收斂，不是靠設計。回傳 void 的 finalizer 兩種情況都會跑，而且不會吞掉例外。
 
 ## 檢查了什麼
 
