@@ -3,6 +3,15 @@
 All notable changes to this package. Versions follow [semantic versioning](https://semver.org/).
 
 
+## 1.0.1
+
+- Fixed: the teardown that clears "who sent the RPC we are in" was a Harmony postfix, which **does
+  not run when the patched method throws** — and the patched method is the reader that parses bytes
+  off the network. A single throw left `Sender.Current` pointing at the previous sender, so until
+  the next RPC arrived, the RPCs the game itself sends server-side on everyone's behalf (explosion
+  damage, expired explosives, boss attacks) were validated as though that player had sent them.
+  It is a finalizer now, so it runs either way.
+
 ## 1.0.0
 
 Initial release.
