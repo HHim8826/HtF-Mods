@@ -41,6 +41,10 @@ zip 根目錄要放的東西：
 把它產生成 `ModInfo.Version` 供 `[BepInPlugin]` 引用，`manifest.json` 裡那一份則由
 `.github/tools/check_repo.py` 對帳。細節見根目錄 README 的〈發布到 Thunderstore〉。
 
+**改過這個資料夾裡的任何 `.cs` 就要重新打包**——`dist/` 裡的 zip 是某一次建置的快照。
+而且如果那個版本號已經上架過，得先把 `<Version>` 往上加一版再打包，
+Thunderstore 不收重覆的版本號。步驟見根 README 的〈改過原始碼就要重新打包〉。
+
 ---
 
 ## 中英雙語（全部 mod）
